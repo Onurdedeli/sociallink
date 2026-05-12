@@ -6,6 +6,7 @@ import {
   jsonb,
   timestamp,
   index,
+  boolean,
 } from "drizzle-orm/pg-core";
 
 export const PLATFORMS = [
@@ -100,6 +101,7 @@ export const clicks = pgTable(
     referrer: text("referrer"),
     platform: text("platform", { enum: PLATFORMS }),
     country: text("country"),
+    isBot: boolean("is_bot").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

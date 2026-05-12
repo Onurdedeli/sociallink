@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { nanoid } from "nanoid";
+import { checkBotId } from "botid/server";
 import { db } from "@/db";
 import { trackingCodes, campaigns, clicks, PLATFORMS, Platform } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { hashIp, readClientIp } from "@/lib/ip";
+import { clickLimit } from "@/lib/ratelimit";
 
 export const dynamic = "force-dynamic";
 
@@ -12,6 +14,20 @@ export async function GET(
   { params }: { params: Promise<{ code: string }> }
 ) {
   const { code } = await params;
+
+  const ip = readClientIp(req.headers) || "anon";
+  const limit = await clickLimit.limit(ip);
+  if (!limit.success) {
+    return new NextResponse("Rate limit exceeded", {
+      status: 429,
+      headers: {
+        "retry-after": String(Math.max(1, Math.ceil((limit.reset - Date.now()) / 1000))),
+        "x-ratelimit-limit": String(limit.limit),
+        "x-ratelimit-remaining": "0",
+      },
+    });
+  }
+
   const tc = await db
     .select()
     .from(trackingCodes)
@@ -30,6 +46,8 @@ export async function GET(
     ? (pParam as Platform)
     : tc.platform;
 
+  const bot = await checkBotId().catch(() => ({ isBot: false }));
+
   await db.insert(clicks).values({
     id: nanoid(14),
     code: tc.code,
@@ -38,6 +56,7 @@ export async function GET(
     referrer: req.headers.get("referer")?.slice(0, 500) || null,
     platform,
     country: req.headers.get("x-vercel-ip-country") || null,
+    isBot: bot.isBot,
   });
 
   // Append tracking code as a query param so the brand can echo it back via conversion webhook

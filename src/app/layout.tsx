@@ -1,6 +1,8 @@
 import "./globals.css";
 import type { Metadata } from "next";
 import Link from "next/link";
+import { Analytics } from "@vercel/analytics/next";
+import { SpeedInsights } from "@vercel/speed-insights/next";
 import { getCurrentUser } from "@/lib/auth";
 import { LogoutButton } from "@/components/logout-button";
 
@@ -50,6 +52,8 @@ export default async function RootLayout({
           © {new Date().getFullYear()} Sociallink — open analytics for creator
           marketing.
         </footer>
+        <Analytics />
+        <SpeedInsights />
       </body>
     </html>
   );

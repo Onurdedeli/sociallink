@@ -5,6 +5,8 @@ import { db } from "@/db";
 import { trackingCodes, campaigns, conversions } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { hmacVerify } from "@/lib/hmac";
+import { conversionLimit } from "@/lib/ratelimit";
+import { readClientIp } from "@/lib/ip";
 
 const Body = z.object({
   code: z.string().min(1),
@@ -14,6 +16,20 @@ const Body = z.object({
 });
 
 export async function POST(req: NextRequest) {
+  const ip = readClientIp(req.headers) || "anon";
+  const limit = await conversionLimit.limit(ip);
+  if (!limit.success) {
+    return NextResponse.json(
+      { error: "Rate limit exceeded" },
+      {
+        status: 429,
+        headers: {
+          "retry-after": String(Math.max(1, Math.ceil((limit.reset - Date.now()) / 1000))),
+        },
+      }
+    );
+  }
+
   // We read the raw body once for HMAC verification, then JSON-parse it.
   const raw = await req.text();
   const signature = req.headers.get("x-sociallink-signature");
