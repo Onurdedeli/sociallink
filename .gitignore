@@ -1,0 +1,12 @@
+node_modules
+.next
+out
+.env*
+*.db
+*.db-journal
+*.db-shm
+*.db-wal
+.playwright-mcp/
+brand-dashboard.png
+.DS_Store
+drizzle/

@@ -1,0 +1,42 @@
+import { NextRequest, NextResponse } from "next/server";
+import { nanoid } from "nanoid";
+import { z } from "zod";
+import { db } from "@/db";
+import { trackingCodes, campaigns, conversions } from "@/db/schema";
+import { eq } from "drizzle-orm";
+
+const Body = z.object({
+  code: z.string().min(1),
+  orderId: z.string().optional(),
+  amountCents: z.number().int().nonnegative().default(0),
+  metadata: z.record(z.unknown()).optional(),
+});
+
+export async function POST(req: NextRequest) {
+  const json = await req.json().catch(() => null);
+  const parsed = Body.safeParse(json);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
+  }
+  const { code, orderId, amountCents, metadata } = parsed.data;
+
+  const tc = await db.select().from(trackingCodes).where(eq(trackingCodes.code, code)).get();
+  if (!tc) return NextResponse.json({ error: "Unknown code" }, { status: 404 });
+
+  const c = await db.select().from(campaigns).where(eq(campaigns.id, tc.campaignId)).get();
+  if (!c) return NextResponse.json({ error: "Campaign missing" }, { status: 404 });
+
+  const commissionCents = Math.floor((amountCents * c.commissionBps) / 10000);
+
+  const id = nanoid(14);
+  await db.insert(conversions).values({
+    id,
+    code,
+    orderId: orderId || null,
+    amountCents,
+    commissionCents,
+    metadata: metadata || null,
+  });
+
+  return NextResponse.json({ ok: true, id, commissionCents });
+}
