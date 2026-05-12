@@ -63,5 +63,8 @@ export async function GET(
   const target = new URL(c.targetUrl);
   target.searchParams.set("sl", tc.code);
 
-  return NextResponse.redirect(target.toString(), { status: 302 });
+  return NextResponse.redirect(target.toString(), {
+    status: 302,
+    headers: { "cache-control": "no-store" },
+  });
 }
