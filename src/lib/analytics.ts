@@ -18,7 +18,7 @@ export async function statsForCampaigns(campaignIds: string[]): Promise<Record<s
     .select({ code: trackingCodes.code, campaignId: trackingCodes.campaignId, influencerId: trackingCodes.influencerId })
     .from(trackingCodes)
     .where(inArray(trackingCodes.campaignId, campaignIds))
-    .all();
+    ;
 
   const codeToCampaign = new Map<string, string>();
   const campaignInfluencers = new Map<string, Set<string>>();
@@ -48,7 +48,7 @@ export async function statsForCampaigns(campaignIds: string[]): Promise<Record<s
     .from(clicks)
     .where(inArray(clicks.code, codes))
     .groupBy(clicks.code)
-    .all();
+    ;
   for (const r of clickRows) {
     const cid = codeToCampaign.get(r.code);
     if (cid) result[cid].clicks += Number(r.n);
@@ -64,7 +64,7 @@ export async function statsForCampaigns(campaignIds: string[]): Promise<Record<s
     .from(conversions)
     .where(inArray(conversions.code, codes))
     .groupBy(conversions.code)
-    .all();
+    ;
   for (const r of convRows) {
     const cid = codeToCampaign.get(r.code);
     if (!cid) continue;
@@ -81,7 +81,7 @@ export async function statsForInfluencer(influencerId: string) {
     .select({ code: trackingCodes.code, campaignId: trackingCodes.campaignId, platform: trackingCodes.platform })
     .from(trackingCodes)
     .where(eq(trackingCodes.influencerId, influencerId))
-    .all();
+    ;
 
   const codes = tcRows.map((r) => r.code);
   let totalClicks = 0;
@@ -99,7 +99,7 @@ export async function statsForInfluencer(influencerId: string) {
     .from(clicks)
     .where(inArray(clicks.code, codes))
     .groupBy(clicks.code, clicks.platform)
-    .all();
+    ;
   for (const r of clickRows) {
     totalClicks += Number(r.n);
     const p = r.platform || "other";
@@ -117,7 +117,7 @@ export async function statsForInfluencer(influencerId: string) {
     .from(conversions)
     .where(inArray(conversions.code, codes))
     .groupBy(conversions.code)
-    .all();
+    ;
   const tcByCode = new Map(tcRows.map((t) => [t.code, t]));
   for (const r of convRows) {
     totalConversions += Number(r.n);

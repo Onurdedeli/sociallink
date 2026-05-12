@@ -12,7 +12,7 @@ export async function signInAction(formData: FormData) {
   const password = String(formData.get("password") || "");
   if (!email || !password) redirect("/sign-in?error=1");
 
-  const u = await db.select().from(users).where(eq(users.email, email)).get();
+  const u = await db.select().from(users).where(eq(users.email, email)).limit(1).then((r) => r[0] ?? null);
   if (!u) redirect("/sign-in?error=1");
   const ok = await bcrypt.compare(password, u.passwordHash);
   if (!ok) redirect("/sign-in?error=1");

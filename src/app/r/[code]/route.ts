@@ -16,10 +16,10 @@ export async function GET(
     .select()
     .from(trackingCodes)
     .where(eq(trackingCodes.code, code))
-    .get();
+    .limit(1).then((r) => r[0] ?? null);
   if (!tc) return NextResponse.json({ error: "Unknown code" }, { status: 404 });
 
-  const c = await db.select().from(campaigns).where(eq(campaigns.id, tc.campaignId)).get();
+  const c = await db.select().from(campaigns).where(eq(campaigns.id, tc.campaignId)).limit(1).then((r) => r[0] ?? null);
   if (!c || c.status !== "active") {
     return NextResponse.json({ error: "Campaign inactive" }, { status: 410 });
   }

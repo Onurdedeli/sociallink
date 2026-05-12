@@ -20,10 +20,10 @@ export async function POST(req: NextRequest) {
   }
   const { code, orderId, amountCents, metadata } = parsed.data;
 
-  const tc = await db.select().from(trackingCodes).where(eq(trackingCodes.code, code)).get();
+  const tc = await db.select().from(trackingCodes).where(eq(trackingCodes.code, code)).limit(1).then((r) => r[0] ?? null);
   if (!tc) return NextResponse.json({ error: "Unknown code" }, { status: 404 });
 
-  const c = await db.select().from(campaigns).where(eq(campaigns.id, tc.campaignId)).get();
+  const c = await db.select().from(campaigns).where(eq(campaigns.id, tc.campaignId)).limit(1).then((r) => r[0] ?? null);
   if (!c) return NextResponse.json({ error: "Campaign missing" }, { status: 404 });
 
   const commissionCents = Math.floor((amountCents * c.commissionBps) / 10000);

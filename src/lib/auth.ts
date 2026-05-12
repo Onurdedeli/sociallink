@@ -40,7 +40,7 @@ export async function getCurrentUser() {
   try {
     const { payload } = await jwtVerify(token, key());
     const uid = payload.uid as string;
-    const row = await db.select().from(users).where(eq(users.id, uid)).get();
+    const row = await db.select().from(users).where(eq(users.id, uid)).limit(1).then((r) => r[0] ?? null);
     return row ?? null;
   } catch {
     return null;

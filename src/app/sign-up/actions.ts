@@ -20,7 +20,7 @@ export async function signUpAction(formData: FormData) {
     redirect("/sign-up?error=" + encodeURIComponent("Please fill all required fields (password ≥ 8 chars)."));
   }
 
-  const existing = await db.select().from(users).where(eq(users.email, email)).get();
+  const existing = await db.select().from(users).where(eq(users.email, email)).limit(1).then((r) => r[0] ?? null);
   if (existing) redirect("/sign-up?error=" + encodeURIComponent("Email already registered."));
 
   const id = nanoid(12);

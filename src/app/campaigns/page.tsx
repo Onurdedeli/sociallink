@@ -17,17 +17,17 @@ export default async function CampaignsPage() {
     .from(campaigns)
     .where(eq(campaigns.status, "active"))
     .orderBy(desc(campaigns.createdAt))
-    .all();
+    ;
 
   const brandIds = Array.from(new Set(list.map((c) => c.brandId)));
   const brands = brandIds.length
-    ? await db.select().from(users).where(inArray(users.id, brandIds)).all()
+    ? await db.select().from(users).where(inArray(users.id, brandIds))
     : [];
   const brandMap = new Map(brands.map((b) => [b.id, b]));
 
   // Tracking codes claimed by this influencer
   const myCodes = user.role === "influencer"
-    ? await db.select().from(trackingCodes).where(eq(trackingCodes.influencerId, user.id)).all()
+    ? await db.select().from(trackingCodes).where(eq(trackingCodes.influencerId, user.id))
     : [];
   const claimed = new Set(myCodes.map((tc) => tc.campaignId));
 

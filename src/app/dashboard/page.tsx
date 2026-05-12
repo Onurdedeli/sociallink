@@ -19,7 +19,7 @@ export default async function DashboardPage() {
       .from(campaigns)
       .where(eq(campaigns.brandId, user.id))
       .orderBy(desc(campaigns.createdAt))
-      .all();
+      ;
     const stats = await statsForCampaigns(myCampaigns.map((c) => c.id));
     const totals = Object.values(stats).reduce(
       (acc, s) => ({
@@ -89,11 +89,11 @@ export default async function DashboardPage() {
 
   const campaignIds = Array.from(new Set(s.codes.map((c) => c.campaignId)));
   const myCampaigns = campaignIds.length
-    ? await db.select().from(campaigns).where(inArray(campaigns.id, campaignIds)).all()
+    ? await db.select().from(campaigns).where(inArray(campaigns.id, campaignIds))
     : [];
   const brandIds = Array.from(new Set(myCampaigns.map((c) => c.brandId)));
   const brandRows = brandIds.length
-    ? await db.select().from(users).where(inArray(users.id, brandIds)).all()
+    ? await db.select().from(users).where(inArray(users.id, brandIds))
     : [];
   const campaignMap = new Map(myCampaigns.map((c) => [c.id, c]));
   const brandMap = new Map(brandRows.map((b) => [b.id, b]));

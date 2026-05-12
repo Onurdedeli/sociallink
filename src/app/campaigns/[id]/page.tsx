@@ -19,10 +19,10 @@ export default async function CampaignDetail({
   const user = await getCurrentUser();
   if (!user) redirect("/sign-in");
 
-  const c = await db.select().from(campaigns).where(eq(campaigns.id, id)).get();
+  const c = await db.select().from(campaigns).where(eq(campaigns.id, id)).limit(1).then((r) => r[0] ?? null);
   if (!c) notFound();
 
-  const brand = await db.select().from(users).where(eq(users.id, c.brandId)).get();
+  const brand = await db.select().from(users).where(eq(users.id, c.brandId)).limit(1).then((r) => r[0] ?? null);
   const appUrl = process.env.APP_URL || "http://localhost:3000";
   const isOwner = user.role === "brand" && user.id === c.brandId;
 
@@ -31,11 +31,11 @@ export default async function CampaignDetail({
         .select()
         .from(trackingCodes)
         .where(and(eq(trackingCodes.campaignId, c.id), eq(trackingCodes.influencerId, user.id)))
-        .get()
+        .limit(1).then((r) => r[0] ?? null)
     : null;
 
   // Aggregate stats over all codes
-  const codes = await db.select().from(trackingCodes).where(eq(trackingCodes.campaignId, c.id)).all();
+  const codes = await db.select().from(trackingCodes).where(eq(trackingCodes.campaignId, c.id));
   const codeIds = codes.map((tc) => tc.code);
   const clickAgg = codeIds.length
     ? await db
@@ -47,7 +47,7 @@ export default async function CampaignDetail({
         .from(clicks)
         .where(inArray(clicks.code, codeIds))
         .groupBy(clicks.code, clicks.platform)
-        .all()
+        
     : [];
   const convAgg = codeIds.length
     ? await db
@@ -60,7 +60,7 @@ export default async function CampaignDetail({
         .from(conversions)
         .where(inArray(conversions.code, codeIds))
         .groupBy(conversions.code)
-        .all()
+        
     : [];
 
   const totals = {
@@ -78,7 +78,7 @@ export default async function CampaignDetail({
 
   const influencerIds = Array.from(new Set(codes.map((tc) => tc.influencerId)));
   const influencers = influencerIds.length
-    ? await db.select().from(users).where(inArray(users.id, influencerIds)).all()
+    ? await db.select().from(users).where(inArray(users.id, influencerIds))
     : [];
   const infMap = new Map(influencers.map((i) => [i.id, i]));
 
@@ -95,7 +95,7 @@ export default async function CampaignDetail({
         .where(inArray(clicks.code, codeIds))
         .orderBy(desc(clicks.createdAt))
         .limit(20)
-        .all()
+        
     : [];
 
   return (

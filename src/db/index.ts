@@ -1,12 +1,10 @@
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
+import { neon } from "@neondatabase/serverless";
+import { drizzle } from "drizzle-orm/neon-http";
 import * as schema from "./schema";
-import path from "node:path";
 
-const dbPath = process.env.DATABASE_URL || path.resolve("./sociallink.db");
-const sqlite = new Database(dbPath);
-sqlite.pragma("journal_mode = WAL");
-sqlite.pragma("foreign_keys = ON");
+const url = process.env.DATABASE_URL || process.env.POSTGRES_URL;
+if (!url) throw new Error("DATABASE_URL (or POSTGRES_URL) is required");
 
-export const db = drizzle(sqlite, { schema });
+const sql = neon(url);
+export const db = drizzle({ client: sql, schema });
 export { schema };

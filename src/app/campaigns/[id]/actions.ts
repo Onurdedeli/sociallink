@@ -18,14 +18,14 @@ export async function joinCampaignAction(formData: FormData) {
     ? (platformInput as Platform)
     : "other";
 
-  const camp = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).get();
+  const camp = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1).then((r) => r[0] ?? null);
   if (!camp || camp.status !== "active") redirect("/campaigns");
 
   const existing = await db
     .select()
     .from(trackingCodes)
     .where(and(eq(trackingCodes.campaignId, campaignId), eq(trackingCodes.influencerId, user.id)))
-    .get();
+    .limit(1).then((r) => r[0] ?? null);
 
   if (existing) {
     if (existing.platform !== platform) {
@@ -53,7 +53,7 @@ export async function setStatusAction(formData: FormData) {
   const campaignId = String(formData.get("campaignId") || "");
   const status = String(formData.get("status") || "active") as "active" | "paused" | "ended" | "draft";
 
-  const camp = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).get();
+  const camp = await db.select().from(campaigns).where(eq(campaigns.id, campaignId)).limit(1).then((r) => r[0] ?? null);
   if (!camp || camp.brandId !== user.id) redirect("/dashboard");
 
   await db.update(campaigns).set({ status }).where(eq(campaigns.id, campaignId));

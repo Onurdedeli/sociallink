@@ -6,7 +6,7 @@ import { fmtMoney } from "@/lib/format";
 export const dynamic = "force-dynamic";
 
 export default async function Home() {
-  const rates = await db.select().from(cpmRates).all();
+  const rates = await db.select().from(cpmRates);
 
   return (
     <div className="space-y-16">

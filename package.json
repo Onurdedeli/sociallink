@@ -12,7 +12,7 @@
     "db:seed": "tsx src/db/seed.ts"
   },
   "dependencies": {
-    "better-sqlite3": "^11.7.0",
+    "@neondatabase/serverless": "^0.10.4",
     "bcryptjs": "^2.4.3",
     "drizzle-orm": "^0.36.4",
     "jose": "^5.9.6",
@@ -24,7 +24,6 @@
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",
-    "@types/better-sqlite3": "^7.6.12",
     "@types/node": "^22",
     "@types/react": "^19",
     "@types/react-dom": "^19",

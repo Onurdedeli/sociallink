@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 const TIER_ORDER = ["nano", "micro", "mid", "macro", "mega"] as const;
 
 export default async function CpmPage() {
-  const rates = await db.select().from(cpmRates).all();
+  const rates = await db.select().from(cpmRates);
 
   const byPlatform: Record<string, typeof rates> = {};
   for (const r of rates) {

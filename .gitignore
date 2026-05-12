@@ -10,3 +10,5 @@ out
 brand-dashboard.png
 .DS_Store
 drizzle/
+.vercel
+.env*.local

@@ -24,7 +24,7 @@ export async function GET(req: NextRequest) {
     .select()
     .from(cpmRates)
     .where(filters.length ? and(...filters) : undefined)
-    .all();
+    ;
 
   return NextResponse.json(
     {

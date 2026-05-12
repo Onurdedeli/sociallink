@@ -1,11 +1,11 @@
-import { sql } from "drizzle-orm";
 import {
-  sqliteTable,
+  pgTable,
   text,
   integer,
-  real,
+  jsonb,
+  timestamp,
   index,
-} from "drizzle-orm/sqlite-core";
+} from "drizzle-orm/pg-core";
 
 export const PLATFORMS = [
   "instagram",
@@ -22,25 +22,23 @@ export type Platform = (typeof PLATFORMS)[number];
 export const ROLES = ["brand", "influencer"] as const;
 export type Role = (typeof ROLES)[number];
 
-export const users = sqliteTable("users", {
+export const users = pgTable("users", {
   id: text("id").primaryKey(),
   email: text("email").notNull().unique(),
   passwordHash: text("password_hash").notNull(),
   name: text("name").notNull(),
   role: text("role", { enum: ROLES }).notNull(),
-  // brand-only
   companyName: text("company_name"),
   website: text("website"),
-  // influencer-only — JSON: [{platform, handle, followers}]
-  channels: text("channels", { mode: "json" }).$type<
+  channels: jsonb("channels").$type<
     { platform: Platform; handle: string; followers: number }[]
   >(),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
-    .default(sql`(unixepoch())`),
+    .defaultNow(),
 });
 
-export const campaigns = sqliteTable("campaigns", {
+export const campaigns = pgTable("campaigns", {
   id: text("id").primaryKey(),
   brandId: text("brand_id")
     .notNull()
@@ -48,25 +46,24 @@ export const campaigns = sqliteTable("campaigns", {
   title: text("title").notNull(),
   description: text("description").notNull().default(""),
   targetUrl: text("target_url").notNull(),
-  // payouts (any combination may be set)
-  cpcCents: integer("cpc_cents").notNull().default(0), // pay per click
-  cpmCents: integer("cpm_cents").notNull().default(0), // pay per 1000 impressions/clicks
-  commissionBps: integer("commission_bps").notNull().default(0), // basis points (e.g. 1000 = 10%)
+  cpcCents: integer("cpc_cents").notNull().default(0),
+  cpmCents: integer("cpm_cents").notNull().default(0),
+  commissionBps: integer("commission_bps").notNull().default(0),
   budgetCents: integer("budget_cents").notNull().default(0),
   status: text("status", { enum: ["draft", "active", "paused", "ended"] })
     .notNull()
     .default("active"),
-  startsAt: integer("starts_at", { mode: "timestamp" }),
-  endsAt: integer("ends_at", { mode: "timestamp" }),
-  createdAt: integer("created_at", { mode: "timestamp" })
+  startsAt: timestamp("starts_at", { withTimezone: true }),
+  endsAt: timestamp("ends_at", { withTimezone: true }),
+  createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
-    .default(sql`(unixepoch())`),
+    .defaultNow(),
 });
 
-export const trackingCodes = sqliteTable(
+export const trackingCodes = pgTable(
   "tracking_codes",
   {
-    code: text("code").primaryKey(), // short slug used in /r/[code]
+    code: text("code").primaryKey(),
     campaignId: text("campaign_id")
       .notNull()
       .references(() => campaigns.id, { onDelete: "cascade" }),
@@ -77,9 +74,9 @@ export const trackingCodes = sqliteTable(
     status: text("status", { enum: ["pending", "approved", "rejected"] })
       .notNull()
       .default("approved"),
-    createdAt: integer("created_at", { mode: "timestamp" })
+    createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
-      .default(sql`(unixepoch())`),
+      .defaultNow(),
   },
   (t) => ({
     byCampaign: index("idx_tc_campaign").on(t.campaignId),
@@ -87,7 +84,7 @@ export const trackingCodes = sqliteTable(
   })
 );
 
-export const clicks = sqliteTable(
+export const clicks = pgTable(
   "clicks",
   {
     id: text("id").primaryKey(),
@@ -97,11 +94,11 @@ export const clicks = sqliteTable(
     ipHash: text("ip_hash"),
     userAgent: text("user_agent"),
     referrer: text("referrer"),
-    platform: text("platform", { enum: PLATFORMS }), // overridden by ?p= query param
+    platform: text("platform", { enum: PLATFORMS }),
     country: text("country"),
-    createdAt: integer("created_at", { mode: "timestamp" })
+    createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
-      .default(sql`(unixepoch())`),
+      .defaultNow(),
   },
   (t) => ({
     byCode: index("idx_clicks_code").on(t.code),
@@ -109,7 +106,7 @@ export const clicks = sqliteTable(
   })
 );
 
-export const conversions = sqliteTable(
+export const conversions = pgTable(
   "conversions",
   {
     id: text("id").primaryKey(),
@@ -119,30 +116,29 @@ export const conversions = sqliteTable(
     orderId: text("order_id"),
     amountCents: integer("amount_cents").notNull().default(0),
     commissionCents: integer("commission_cents").notNull().default(0),
-    metadata: text("metadata", { mode: "json" }).$type<Record<string, unknown>>(),
-    createdAt: integer("created_at", { mode: "timestamp" })
+    metadata: jsonb("metadata").$type<Record<string, unknown>>(),
+    createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
-      .default(sql`(unixepoch())`),
+      .defaultNow(),
   },
   (t) => ({
     byCode: index("idx_conv_code").on(t.code),
   })
 );
 
-// Public CPM/CPC reference rates for the open-data tool
-export const cpmRates = sqliteTable("cpm_rates", {
+export const cpmRates = pgTable("cpm_rates", {
   id: text("id").primaryKey(),
   platform: text("platform", { enum: PLATFORMS }).notNull(),
   region: text("region").notNull().default("global"),
   audienceTier: text("audience_tier", {
     enum: ["nano", "micro", "mid", "macro", "mega"],
   }).notNull(),
-  cpmCents: integer("cpm_cents").notNull(), // for 1k impressions
+  cpmCents: integer("cpm_cents").notNull(),
   cpcCents: integer("cpc_cents").notNull().default(0),
   source: text("source"),
-  updatedAt: integer("updated_at", { mode: "timestamp" })
+  updatedAt: timestamp("updated_at", { withTimezone: true })
     .notNull()
-    .default(sql`(unixepoch())`),
+    .defaultNow(),
 });
 
 export type User = typeof users.$inferSelect;
