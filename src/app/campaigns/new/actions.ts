@@ -21,6 +21,7 @@ export async function createCampaignAction(formData: FormData) {
   if (!title || !targetUrl) redirect("/campaigns/new");
 
   const id = nanoid(12);
+  const webhookSecret = nanoid(40);
   await db.insert(campaigns).values({
     id,
     brandId: user.id,
@@ -31,6 +32,7 @@ export async function createCampaignAction(formData: FormData) {
     cpmCents,
     commissionBps,
     budgetCents,
+    webhookSecret,
     status: "active",
   });
 

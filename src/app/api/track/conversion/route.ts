@@ -4,6 +4,7 @@ import { z } from "zod";
 import { db } from "@/db";
 import { trackingCodes, campaigns, conversions } from "@/db/schema";
 import { eq } from "drizzle-orm";
+import { hmacVerify } from "@/lib/hmac";
 
 const Body = z.object({
   code: z.string().min(1),
@@ -13,18 +14,48 @@ const Body = z.object({
 });
 
 export async function POST(req: NextRequest) {
-  const json = await req.json().catch(() => null);
+  // We read the raw body once for HMAC verification, then JSON-parse it.
+  const raw = await req.text();
+  const signature = req.headers.get("x-sociallink-signature");
+  if (!signature) {
+    return NextResponse.json(
+      { error: "Missing X-Sociallink-Signature header" },
+      { status: 401 }
+    );
+  }
+
+  let json: unknown;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
   const parsed = Body.safeParse(json);
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
   const { code, orderId, amountCents, metadata } = parsed.data;
 
-  const tc = await db.select().from(trackingCodes).where(eq(trackingCodes.code, code)).limit(1).then((r) => r[0] ?? null);
+  const tc = await db
+    .select()
+    .from(trackingCodes)
+    .where(eq(trackingCodes.code, code))
+    .limit(1)
+    .then((r) => r[0] ?? null);
   if (!tc) return NextResponse.json({ error: "Unknown code" }, { status: 404 });
 
-  const c = await db.select().from(campaigns).where(eq(campaigns.id, tc.campaignId)).limit(1).then((r) => r[0] ?? null);
+  const c = await db
+    .select()
+    .from(campaigns)
+    .where(eq(campaigns.id, tc.campaignId))
+    .limit(1)
+    .then((r) => r[0] ?? null);
   if (!c) return NextResponse.json({ error: "Campaign missing" }, { status: 404 });
+
+  if (!hmacVerify(c.webhookSecret, raw, signature)) {
+    return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
+  }
 
   const commissionCents = Math.floor((amountCents * c.commissionBps) / 10000);
 

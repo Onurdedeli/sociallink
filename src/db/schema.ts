@@ -1,3 +1,4 @@
+import { sql } from "drizzle-orm";
 import {
   pgTable,
   text,
@@ -50,6 +51,9 @@ export const campaigns = pgTable("campaigns", {
   cpmCents: integer("cpm_cents").notNull().default(0),
   commissionBps: integer("commission_bps").notNull().default(0),
   budgetCents: integer("budget_cents").notNull().default(0),
+  webhookSecret: text("webhook_secret")
+    .notNull()
+    .default(sql`replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '')`),
   status: text("status", { enum: ["draft", "active", "paused", "ended"] })
     .notNull()
     .default("active"),

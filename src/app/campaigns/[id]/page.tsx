@@ -250,19 +250,46 @@ export default async function CampaignDetail({
       {isOwner && (
         <section>
           <h2 className="text-lg font-semibold mb-2">Conversion webhook</h2>
-          <div className="card text-sm space-y-2">
-            <p>POST a JSON payload from your store after a successful order:</p>
-            <pre className="bg-slate-900 text-slate-100 rounded-lg p-3 overflow-x-auto text-xs">
-{`curl -X POST ${appUrl}/api/track/conversion \\
-  -H 'content-type: application/json' \\
-  -d '{
-    "code": "<sl-code-from-?sl-query-param>",
-    "orderId": "ORDER_123",
-    "amountCents": 12900
-  }'`}
-            </pre>
+          <div className="card text-sm space-y-3">
+            <p>
+              POST a JSON payload from your store after a successful order. The
+              request must be HMAC-SHA256-signed with this campaign&apos;s secret —
+              unsigned requests are rejected.
+            </p>
+            <div>
+              <div className="label">Webhook secret (keep private)</div>
+              <div className="flex items-center gap-2">
+                <code className="block flex-1 text-xs bg-slate-100 rounded px-3 py-2 break-all">
+                  {c.webhookSecret}
+                </code>
+                <CopyButton text={c.webhookSecret} />
+              </div>
+            </div>
+            <div>
+              <div className="label">Example (Node)</div>
+              <pre className="bg-slate-900 text-slate-100 rounded-lg p-3 overflow-x-auto text-xs">
+{`const crypto = require('node:crypto');
+const secret = '${c.webhookSecret}';
+const body = JSON.stringify({
+  code: '<sl-from-?sl-query-param>',
+  orderId: 'ORDER_123',
+  amountCents: 12900,
+});
+const signature = crypto.createHmac('sha256', secret).update(body).digest('hex');
+
+await fetch('${appUrl}/api/track/conversion', {
+  method: 'POST',
+  headers: {
+    'content-type': 'application/json',
+    'x-sociallink-signature': signature,
+  },
+  body,
+});`}
+              </pre>
+            </div>
             <p className="text-slate-600">
-              We compute commission ({fmtPct(c.commissionBps)}) automatically and attribute it to the right creator.
+              Commission ({fmtPct(c.commissionBps)}) is computed automatically and
+              attributed to the right creator.
             </p>
           </div>
         </section>
