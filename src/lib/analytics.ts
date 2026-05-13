@@ -12,6 +12,7 @@ function sourceFilter(source: ConversionSource) {
 export type CampaignStats = {
   campaignId: string;
   clicks: number;
+  botClicks: number;
   conversions: number;
   revenueCents: number;
   commissionCents: number;
@@ -41,6 +42,7 @@ export async function statsForCampaigns(campaignIds: string[]): Promise<Record<s
     result[id] = {
       campaignId: id,
       clicks: 0,
+      botClicks: 0,
       conversions: 0,
       revenueCents: 0,
       commissionCents: 0,
@@ -51,14 +53,17 @@ export async function statsForCampaigns(campaignIds: string[]): Promise<Record<s
   if (codes.length === 0) return result;
 
   const clickRows = await db
-    .select({ code: clicks.code, n: sql<number>`count(*)` })
+    .select({ code: clicks.code, isBot: clicks.isBot, n: sql<number>`count(*)` })
     .from(clicks)
     .where(inArray(clicks.code, codes))
-    .groupBy(clicks.code)
+    .groupBy(clicks.code, clicks.isBot)
     ;
   for (const r of clickRows) {
     const cid = codeToCampaign.get(r.code);
-    if (cid) result[cid].clicks += Number(r.n);
+    if (!cid) continue;
+    const n = Number(r.n);
+    result[cid].clicks += n;
+    if (r.isBot) result[cid].botClicks += n;
   }
 
   const convRows = await db
@@ -92,26 +97,30 @@ export async function statsForInfluencer(influencerId: string) {
 
   const codes = tcRows.map((r) => r.code);
   let totalClicks = 0;
+  let totalBotClicks = 0;
   let totalConversions = 0;
   let totalRevenue = 0;
   let totalCommission = 0;
-  const byPlatform: Record<string, { clicks: number; conversions: number; commission: number }> = {};
+  const byPlatform: Record<string, { clicks: number; botClicks: number; conversions: number; commission: number }> = {};
 
   if (codes.length === 0) {
-    return { totalClicks, totalConversions, totalRevenue, totalCommission, byPlatform, codes: tcRows };
+    return { totalClicks, totalBotClicks, totalConversions, totalRevenue, totalCommission, byPlatform, codes: tcRows };
   }
 
   const clickRows = await db
-    .select({ code: clicks.code, platform: clicks.platform, n: sql<number>`count(*)` })
+    .select({ code: clicks.code, platform: clicks.platform, isBot: clicks.isBot, n: sql<number>`count(*)` })
     .from(clicks)
     .where(inArray(clicks.code, codes))
-    .groupBy(clicks.code, clicks.platform)
+    .groupBy(clicks.code, clicks.platform, clicks.isBot)
     ;
   for (const r of clickRows) {
-    totalClicks += Number(r.n);
+    const n = Number(r.n);
+    totalClicks += n;
+    if (r.isBot) totalBotClicks += n;
     const p = r.platform || "other";
-    byPlatform[p] ||= { clicks: 0, conversions: 0, commission: 0 };
-    byPlatform[p].clicks += Number(r.n);
+    byPlatform[p] ||= { clicks: 0, botClicks: 0, conversions: 0, commission: 0 };
+    byPlatform[p].clicks += n;
+    if (r.isBot) byPlatform[p].botClicks += n;
   }
 
   const convRows = await db
@@ -133,10 +142,10 @@ export async function statsForInfluencer(influencerId: string) {
     totalCommission += Number(r.com);
     const platform =
       r.platform || tcByCode.get(r.code)?.platform || "other";
-    byPlatform[platform] ||= { clicks: 0, conversions: 0, commission: 0 };
+    byPlatform[platform] ||= { clicks: 0, botClicks: 0, conversions: 0, commission: 0 };
     byPlatform[platform].conversions += Number(r.n);
     byPlatform[platform].commission += Number(r.com);
   }
 
-  return { totalClicks, totalConversions, totalRevenue, totalCommission, byPlatform, codes: tcRows };
+  return { totalClicks, totalBotClicks, totalConversions, totalRevenue, totalCommission, byPlatform, codes: tcRows };
 }

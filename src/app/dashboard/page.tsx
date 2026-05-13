@@ -5,7 +5,7 @@ import { db } from "@/db";
 import { campaigns, trackingCodes, users } from "@/db/schema";
 import { eq, desc, inArray } from "drizzle-orm";
 import { statsForCampaigns, statsForInfluencer } from "@/lib/analytics";
-import { fmtMoney, fmtNum, fmtPct, epcCents } from "@/lib/format";
+import { fmtMoney, fmtNum, fmtPct, epcCents, fmtBotRate } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -24,12 +24,14 @@ export default async function DashboardPage() {
     const totals = Object.values(stats).reduce(
       (acc, s) => ({
         clicks: acc.clicks + s.clicks,
+        botClicks: acc.botClicks + s.botClicks,
         conversions: acc.conversions + s.conversions,
         revenue: acc.revenue + s.revenueCents,
         commission: acc.commission + s.commissionCents,
       }),
-      { clicks: 0, conversions: 0, revenue: 0, commission: 0 }
+      { clicks: 0, botClicks: 0, conversions: 0, revenue: 0, commission: 0 }
     );
+    const humanClicks = totals.clicks - totals.botClicks;
 
     return (
       <div className="space-y-8">
@@ -38,12 +40,17 @@ export default async function DashboardPage() {
           <Link href="/campaigns/new" className="btn-primary">New campaign</Link>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-6 gap-4">
           <KPI label="Campaigns" value={fmtNum(myCampaigns.length)} />
-          <KPI label="Clicks" value={fmtNum(totals.clicks)} />
+          <KPI
+            label="Clicks (human)"
+            value={fmtNum(humanClicks)}
+            sub={`${fmtNum(totals.botClicks)} bots · ${fmtBotRate(totals.botClicks, totals.clicks)}`}
+          />
           <KPI label="Conversions" value={fmtNum(totals.conversions)} />
           <KPI label="Revenue tracked" value={fmtMoney(totals.revenue)} />
           <KPI label="EPC paid" value={fmtMoney(epcCents(totals.commission, totals.clicks))} />
+          <KPI label="Bot rate" value={fmtBotRate(totals.botClicks, totals.clicks)} />
         </div>
 
         <div className="card overflow-x-auto">
@@ -51,12 +58,12 @@ export default async function DashboardPage() {
             <thead>
               <tr>
                 <th>Campaign</th><th>Status</th><th>Payout</th><th>Influencers</th>
-                <th>Clicks</th><th>Conv.</th><th>Revenue</th><th>Commission</th><th>EPC</th><th></th>
+                <th>Clicks</th><th>Bot %</th><th>Conv.</th><th>Revenue</th><th>Commission</th><th>EPC</th><th></th>
               </tr>
             </thead>
             <tbody>
               {myCampaigns.length === 0 && (
-                <tr><td colSpan={10} className="text-center text-slate-500 py-8">No campaigns yet — create your first.</td></tr>
+                <tr><td colSpan={11} className="text-center text-slate-500 py-8">No campaigns yet — create your first.</td></tr>
               )}
               {myCampaigns.map((c) => {
                 const s = stats[c.id];
@@ -70,7 +77,15 @@ export default async function DashboardPage() {
                       {c.commissionBps > 0 && <div>Comm. {fmtPct(c.commissionBps)}</div>}
                     </td>
                     <td>{fmtNum(s.uniqueInfluencers)}</td>
-                    <td>{fmtNum(s.clicks)}</td>
+                    <td>
+                      {fmtNum(s.clicks)}
+                      {s.botClicks > 0 && (
+                        <span className="text-xs text-slate-500"> · {fmtNum(s.clicks - s.botClicks)} human</span>
+                      )}
+                    </td>
+                    <td className={s.botClicks / Math.max(1, s.clicks) > 0.2 ? "text-rose-600" : "text-slate-500"}>
+                      {fmtBotRate(s.botClicks, s.clicks)}
+                    </td>
                     <td>{fmtNum(s.conversions)}</td>
                     <td>{fmtMoney(s.revenueCents)}</td>
                     <td>{fmtMoney(s.commissionCents)}</td>
@@ -108,27 +123,40 @@ export default async function DashboardPage() {
         <Link href="/campaigns" className="btn-primary">Browse campaigns</Link>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-4">
         <KPI label="Tracking codes" value={fmtNum(s.codes.length)} />
-        <KPI label="Total clicks" value={fmtNum(s.totalClicks)} />
+        <KPI
+          label="Clicks (human)"
+          value={fmtNum(s.totalClicks - s.totalBotClicks)}
+          sub={`${fmtNum(s.totalBotClicks)} bots · ${fmtBotRate(s.totalBotClicks, s.totalClicks)}`}
+        />
         <KPI label="Conversions" value={fmtNum(s.totalConversions)} />
         <KPI label="Earnings" value={fmtMoney(s.totalCommission)} />
         <KPI label="EPC" value={fmtMoney(epcCents(s.totalCommission, s.totalClicks))} />
+        <KPI label="Bot rate" value={fmtBotRate(s.totalBotClicks, s.totalClicks)} />
       </div>
 
       <section>
         <h2 className="text-lg font-semibold mb-2">By platform</h2>
         <div className="card overflow-x-auto">
           <table className="table">
-            <thead><tr><th>Platform</th><th>Clicks</th><th>Conv.</th><th>CR</th><th>Earnings</th><th>EPC</th></tr></thead>
+            <thead><tr><th>Platform</th><th>Clicks</th><th>Bot %</th><th>Conv.</th><th>CR</th><th>Earnings</th><th>EPC</th></tr></thead>
             <tbody>
               {Object.keys(s.byPlatform).length === 0 && (
-                <tr><td colSpan={6} className="text-center text-slate-500 py-6">No traffic yet.</td></tr>
+                <tr><td colSpan={7} className="text-center text-slate-500 py-6">No traffic yet.</td></tr>
               )}
               {Object.entries(s.byPlatform).map(([p, d]) => (
                 <tr key={p}>
                   <td className="capitalize font-medium">{p}</td>
-                  <td>{fmtNum(d.clicks)}</td>
+                  <td>
+                    {fmtNum(d.clicks)}
+                    {d.botClicks > 0 && (
+                      <span className="text-xs text-slate-500"> · {fmtNum(d.clicks - d.botClicks)} human</span>
+                    )}
+                  </td>
+                  <td className={d.botClicks / Math.max(1, d.clicks) > 0.2 ? "text-rose-600" : "text-slate-500"}>
+                    {fmtBotRate(d.botClicks, d.clicks)}
+                  </td>
                   <td>{fmtNum(d.conversions)}</td>
                   <td className="text-slate-500">{d.clicks > 0 ? ((d.conversions / d.clicks) * 100).toFixed(1) + "%" : "—"}</td>
                   <td>{fmtMoney(d.commission)}</td>
@@ -173,11 +201,12 @@ export default async function DashboardPage() {
   );
 }
 
-function KPI({ label, value }: { label: string; value: string }) {
+function KPI({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="card">
       <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
       <div className="kpi mt-1">{value}</div>
+      {sub && <div className="text-xs text-slate-500 mt-1">{sub}</div>}
     </div>
   );
 }

@@ -17,3 +17,7 @@ export const fmtDate = (d: Date | number | null | undefined) => {
 /** Earnings per click, in cents. Returns 0 when there are no clicks. */
 export const epcCents = (commissionCents: number, clicks: number) =>
   clicks > 0 ? Math.round(commissionCents / clicks) : 0;
+
+/** Format a bot-rate as "12.3%". Returns "—" when there are no clicks. */
+export const fmtBotRate = (botClicks: number, totalClicks: number) =>
+  totalClicks > 0 ? ((botClicks / totalClicks) * 100).toFixed(1) + "%" : "—";

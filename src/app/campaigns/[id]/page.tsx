@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/db";
 import { campaigns, clicks, conversions, trackingCodes, users, PLATFORMS } from "@/db/schema";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { fmtMoney, fmtNum, fmtPct, fmtDate, epcCents } from "@/lib/format";
+import { fmtMoney, fmtNum, fmtPct, fmtDate, epcCents, fmtBotRate } from "@/lib/format";
 import { joinCampaignAction, setStatusAction } from "./actions";
 import { CopyButton } from "@/components/copy-button";
 
@@ -50,12 +50,12 @@ export default async function CampaignDetail({
         .select({
           code: clicks.code,
           platform: clicks.platform,
+          isBot: clicks.isBot,
           n: sql<number>`count(*)`,
         })
         .from(clicks)
         .where(inArray(clicks.code, codeIds))
-        .groupBy(clicks.code, clicks.platform)
-        
+        .groupBy(clicks.code, clicks.platform, clicks.isBot)
     : [];
   const convWhere = codeIds.length
     ? source === "all"
@@ -92,15 +92,19 @@ export default async function CampaignDetail({
 
   const totals = {
     clicks: clickAgg.reduce((a, r) => a + Number(r.n), 0),
+    botClicks: clickAgg.reduce((a, r) => a + (r.isBot ? Number(r.n) : 0), 0),
     conversions: convAgg.reduce((a, r) => a + Number(r.n), 0),
     revenue: convAgg.reduce((a, r) => a + Number(r.rev), 0),
     commission: convAgg.reduce((a, r) => a + Number(r.com), 0),
   };
 
-  const platformClicks: Record<string, number> = {};
+  const platformClicks: Record<string, { total: number; bot: number }> = {};
   for (const r of clickAgg) {
     const p = r.platform || "other";
-    platformClicks[p] = (platformClicks[p] || 0) + Number(r.n);
+    platformClicks[p] ||= { total: 0, bot: 0 };
+    const n = Number(r.n);
+    platformClicks[p].total += n;
+    if (r.isBot) platformClicks[p].bot += n;
   }
   const platformConversions: Record<string, { conv: number; rev: number; com: number }> = {};
   const tcByCode = new Map(codes.map((tc) => [tc.code, tc]));
@@ -122,6 +126,10 @@ export default async function CampaignDetail({
   // per-code stats for the owner table
   const perCodeClicks: Record<string, number> = {};
   for (const r of clickAgg) perCodeClicks[r.code] = (perCodeClicks[r.code] || 0) + Number(r.n);
+  const perCodeBots: Record<string, number> = {};
+  for (const r of clickAgg) {
+    if (r.isBot) perCodeBots[r.code] = (perCodeBots[r.code] || 0) + Number(r.n);
+  }
   const perCodeConv: Record<string, { n: number; rev: number; com: number }> = {};
   for (const r of convAgg) {
     perCodeConv[r.code] ||= { n: 0, rev: 0, com: 0 };
@@ -160,12 +168,17 @@ export default async function CampaignDetail({
 
       {c.description && <p className="text-slate-700">{c.description}</p>}
 
-      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-6 gap-4">
         <KPI label="Tracking codes" value={fmtNum(codes.length)} />
-        <KPI label="Clicks" value={fmtNum(totals.clicks)} />
+        <KPI
+          label="Clicks (human)"
+          value={fmtNum(totals.clicks - totals.botClicks)}
+          sub={`${fmtNum(totals.botClicks)} bots · ${fmtBotRate(totals.botClicks, totals.clicks)}`}
+        />
         <KPI label="Conversions" value={fmtNum(totals.conversions)} />
         <KPI label="Revenue" value={fmtMoney(totals.revenue)} />
         <KPI label="EPC" value={fmtMoney(epcCents(totals.commission, totals.clicks))} />
+        <KPI label="Bot rate" value={fmtBotRate(totals.botClicks, totals.clicks)} />
       </div>
 
       {/* Source filter */}
@@ -222,25 +235,33 @@ export default async function CampaignDetail({
         <h2 className="text-lg font-semibold mb-2">By platform</h2>
         <div className="card overflow-x-auto">
           <table className="table">
-            <thead><tr><th>Platform</th><th>Clicks</th><th>Conv.</th><th>CR</th><th>Revenue</th><th>Commission</th><th>EPC</th></tr></thead>
+            <thead><tr><th>Platform</th><th>Clicks</th><th>Bot %</th><th>Conv.</th><th>CR</th><th>Revenue</th><th>Commission</th><th>EPC</th></tr></thead>
             <tbody>
               {platformKeys.length === 0 && (
-                <tr><td colSpan={7} className="text-center text-slate-500 py-6">No traffic yet.</td></tr>
+                <tr><td colSpan={8} className="text-center text-slate-500 py-6">No traffic yet.</td></tr>
               )}
               {platformKeys
-                .sort((a, b) => (platformClicks[b] || 0) - (platformClicks[a] || 0))
+                .sort((a, b) => (platformClicks[b]?.total || 0) - (platformClicks[a]?.total || 0))
                 .map((p) => {
-                  const cl = platformClicks[p] || 0;
+                  const pc = platformClicks[p] || { total: 0, bot: 0 };
                   const cv = platformConversions[p] || { conv: 0, rev: 0, com: 0 };
                   return (
                     <tr key={p}>
                       <td className="capitalize font-medium">{p}</td>
-                      <td>{fmtNum(cl)}</td>
+                      <td>
+                        {fmtNum(pc.total)}
+                        {pc.bot > 0 && (
+                          <span className="text-xs text-slate-500"> · {fmtNum(pc.total - pc.bot)} human</span>
+                        )}
+                      </td>
+                      <td className={pc.bot / Math.max(1, pc.total) > 0.2 ? "text-rose-600" : "text-slate-500"}>
+                        {fmtBotRate(pc.bot, pc.total)}
+                      </td>
                       <td>{fmtNum(cv.conv)}</td>
-                      <td className="text-slate-500">{cl > 0 ? ((cv.conv / cl) * 100).toFixed(1) + "%" : "—"}</td>
+                      <td className="text-slate-500">{pc.total > 0 ? ((cv.conv / pc.total) * 100).toFixed(1) + "%" : "—"}</td>
                       <td>{fmtMoney(cv.rev)}</td>
                       <td>{fmtMoney(cv.com)}</td>
-                      <td>{fmtMoney(epcCents(cv.com, cl))}</td>
+                      <td>{fmtMoney(epcCents(cv.com, pc.total))}</td>
                     </tr>
                   );
                 })}
@@ -257,17 +278,18 @@ export default async function CampaignDetail({
             <thead>
               <tr>
                 <th>Influencer</th><th>Platform</th><th>Code</th>
-                <th>Clicks</th><th>Conv.</th><th>Revenue</th><th>Commission</th><th>EPC</th>
+                <th>Clicks</th><th>Bot %</th><th>Conv.</th><th>Revenue</th><th>Commission</th><th>EPC</th>
               </tr>
             </thead>
             <tbody>
               {codes.length === 0 && (
-                <tr><td colSpan={8} className="text-center text-slate-500 py-6">No creators have joined yet.</td></tr>
+                <tr><td colSpan={9} className="text-center text-slate-500 py-6">No creators have joined yet.</td></tr>
               )}
               {codes.map((tc) => {
                 const inf = infMap.get(tc.influencerId);
                 const cv = perCodeConv[tc.code] || { n: 0, rev: 0, com: 0 };
                 const cl = perCodeClicks[tc.code] || 0;
+                const bots = perCodeBots[tc.code] || 0;
                 const canSee = isOwner || (user.role === "influencer" && tc.influencerId === user.id);
                 const name = canSee ? (inf?.name || "creator") : "(hidden)";
                 return (
@@ -275,7 +297,15 @@ export default async function CampaignDetail({
                     <td className="font-medium">{name}</td>
                     <td className="capitalize">{tc.platform}</td>
                     <td><code className="text-xs">{tc.code}</code></td>
-                    <td>{fmtNum(cl)}</td>
+                    <td>
+                      {fmtNum(cl)}
+                      {bots > 0 && (
+                        <span className="text-xs text-slate-500"> · {fmtNum(cl - bots)} human</span>
+                      )}
+                    </td>
+                    <td className={bots / Math.max(1, cl) > 0.2 ? "text-rose-600" : "text-slate-500"}>
+                      {fmtBotRate(bots, cl)}
+                    </td>
                     <td>{fmtNum(cv.n)}</td>
                     <td>{fmtMoney(cv.rev)}</td>
                     <td>{fmtMoney(cv.com)}</td>
@@ -294,16 +324,21 @@ export default async function CampaignDetail({
           <h2 className="text-lg font-semibold mb-2">Recent clicks</h2>
           <div className="card overflow-x-auto">
             <table className="table">
-              <thead><tr><th>When</th><th>Code</th><th>Platform</th><th>Country</th><th>Referrer</th></tr></thead>
+              <thead><tr><th>When</th><th>Code</th><th>Platform</th><th>Type</th><th>Country</th><th>Referrer</th></tr></thead>
               <tbody>
                 {recentClicks.length === 0 && (
-                  <tr><td colSpan={5} className="text-center text-slate-500 py-6">No clicks logged yet.</td></tr>
+                  <tr><td colSpan={6} className="text-center text-slate-500 py-6">No clicks logged yet.</td></tr>
                 )}
                 {recentClicks.map((cl) => (
                   <tr key={cl.id}>
                     <td>{fmtDate(cl.createdAt)}</td>
                     <td><code className="text-xs">{cl.code}</code></td>
                     <td className="capitalize">{cl.platform || "—"}</td>
+                    <td>
+                      {cl.isBot
+                        ? <span className="badge-rose">bot</span>
+                        : <span className="badge-green">human</span>}
+                    </td>
                     <td>{cl.country || "—"}</td>
                     <td className="text-slate-500 text-xs truncate max-w-[200px]">{cl.referrer || "—"}</td>
                   </tr>
@@ -419,11 +454,12 @@ function SourceTab({ active, href, label }: { active: boolean; href: string; lab
   );
 }
 
-function KPI({ label, value }: { label: string; value: string }) {
+function KPI({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
     <div className="card">
       <div className="text-xs uppercase tracking-wide text-slate-500">{label}</div>
       <div className="kpi mt-1">{value}</div>
+      {sub && <div className="text-xs text-slate-500 mt-1">{sub}</div>}
     </div>
   );
 }
