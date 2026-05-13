@@ -1,5 +1,6 @@
 import { db } from "./index";
-import { cpmRates, users } from "./schema";
+import { campaigns, cpmRates, users } from "./schema";
+import { eq } from "drizzle-orm";
 import { nanoid } from "nanoid";
 import bcrypt from "bcryptjs";
 
@@ -87,6 +88,28 @@ async function main() {
       },
     ]);
     console.log("Demo users created: brand@demo.io / creator@demo.io (password: demo1234)");
+  }
+
+  // Demo campaigns — one per brand who doesn't have one yet
+  const brands = await db.select().from(users).where(eq(users.role, "brand"));
+  const existingCamps = await db.select().from(campaigns);
+  const brandsWithCamp = new Set(existingCamps.map((c) => c.brandId));
+  for (const b of brands) {
+    if (brandsWithCamp.has(b.id)) continue;
+    await db.insert(campaigns).values({
+      id: nanoid(12),
+      brandId: b.id,
+      title: `${b.companyName || b.name} — Welcome offer`,
+      description:
+        "Promote our welcome offer on any platform. Earn 15% commission on every purchase plus a click bonus.",
+      targetUrl: b.website || "https://example.com",
+      cpcCents: 5,
+      cpmCents: 0,
+      commissionBps: 1500,
+      budgetCents: 50000,
+      status: "active",
+    });
+    console.log(`Demo campaign created for ${b.email}`);
   }
 
   console.log("Seed complete.");

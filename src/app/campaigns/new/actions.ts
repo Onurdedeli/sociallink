@@ -22,6 +22,7 @@ export async function createCampaignAction(formData: FormData) {
 
   const id = nanoid(12);
   const webhookSecret = nanoid(40);
+  const pixelToken = nanoid(20);
   await db.insert(campaigns).values({
     id,
     brandId: user.id,
@@ -33,6 +34,7 @@ export async function createCampaignAction(formData: FormData) {
     commissionBps,
     budgetCents,
     webhookSecret,
+    pixelToken,
     status: "active",
   });
 

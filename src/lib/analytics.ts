@@ -110,20 +110,22 @@ export async function statsForInfluencer(influencerId: string) {
   const convRows = await db
     .select({
       code: conversions.code,
+      platform: conversions.platform,
       n: sql<number>`count(*)`,
       rev: sql<number>`coalesce(sum(${conversions.amountCents}),0)`,
       com: sql<number>`coalesce(sum(${conversions.commissionCents}),0)`,
     })
     .from(conversions)
     .where(inArray(conversions.code, codes))
-    .groupBy(conversions.code)
+    .groupBy(conversions.code, conversions.platform)
     ;
   const tcByCode = new Map(tcRows.map((t) => [t.code, t]));
   for (const r of convRows) {
     totalConversions += Number(r.n);
     totalRevenue += Number(r.rev);
     totalCommission += Number(r.com);
-    const platform = tcByCode.get(r.code)?.platform || "other";
+    const platform =
+      r.platform || tcByCode.get(r.code)?.platform || "other";
     byPlatform[platform] ||= { clicks: 0, conversions: 0, commission: 0 };
     byPlatform[platform].conversions += Number(r.n);
     byPlatform[platform].commission += Number(r.com);

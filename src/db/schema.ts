@@ -55,6 +55,9 @@ export const campaigns = pgTable("campaigns", {
   webhookSecret: text("webhook_secret")
     .notNull()
     .default(sql`replace(gen_random_uuid()::text, '-', '') || replace(gen_random_uuid()::text, '-', '')`),
+  pixelToken: text("pixel_token")
+    .notNull()
+    .default(sql`replace(gen_random_uuid()::text, '-', '')`),
   status: text("status", { enum: ["draft", "active", "paused", "ended"] })
     .notNull()
     .default("active"),
@@ -122,6 +125,10 @@ export const conversions = pgTable(
     orderId: text("order_id"),
     amountCents: integer("amount_cents").notNull().default(0),
     commissionCents: integer("commission_cents").notNull().default(0),
+    platform: text("platform", { enum: PLATFORMS }),
+    source: text("source", { enum: ["webhook", "pixel"] })
+      .notNull()
+      .default("webhook"),
     metadata: jsonb("metadata").$type<Record<string, unknown>>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()

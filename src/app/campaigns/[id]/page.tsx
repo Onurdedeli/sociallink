@@ -246,15 +246,53 @@ export default async function CampaignDetail({
         </section>
       )}
 
-      {/* Conversion webhook help for owner */}
+      {/* Pixel snippet for owner — easiest integration path */}
       {isOwner && (
         <section>
-          <h2 className="text-lg font-semibold mb-2">Conversion webhook</h2>
+          <h2 className="text-lg font-semibold mb-2">JavaScript pixel (easy)</h2>
           <div className="card text-sm space-y-3">
             <p>
-              POST a JSON payload from your store after a successful order. The
-              request must be HMAC-SHA256-signed with this campaign&apos;s secret —
-              unsigned requests are rejected.
+              Drop this snippet on <strong>every page</strong> of your site (so we
+              can capture the <code>?sl=</code> parameter the visitor lands with),
+              and on your <strong>thank-you / order-confirmation page</strong> set
+              the order details to fire a conversion automatically.
+            </p>
+            <div>
+              <div className="label">Sitewide (capture attribution)</div>
+              <pre className="bg-slate-900 text-slate-100 rounded-lg p-3 overflow-x-auto text-xs">
+{`<script src="${appUrl}/pixel.js"
+  data-token="${c.pixelToken}"
+  async defer></script>`}
+              </pre>
+            </div>
+            <div>
+              <div className="label">Thank-you page (fire conversion)</div>
+              <pre className="bg-slate-900 text-slate-100 rounded-lg p-3 overflow-x-auto text-xs">
+{`<script src="${appUrl}/pixel.js"
+  data-token="${c.pixelToken}"
+  data-amount-cents="{{ ORDER_TOTAL_CENTS }}"
+  data-order-id="{{ ORDER_ID }}"
+  async defer></script>`}
+              </pre>
+            </div>
+            <p className="text-slate-600">
+              The pixel attributes the sale to the platform the click came from
+              (Instagram, TikTok, etc.) automatically. 30-day attribution window.
+              Same <code>orderId</code> is deduped.
+            </p>
+          </div>
+        </section>
+      )}
+
+      {/* Server-side webhook (advanced, HMAC) */}
+      {isOwner && (
+        <section>
+          <h2 className="text-lg font-semibold mb-2">Server-side webhook (advanced)</h2>
+          <div className="card text-sm space-y-3">
+            <p>
+              Prefer server-to-server? POST a JSON payload from your store after a
+              successful order, HMAC-SHA256-signed with this campaign&apos;s
+              secret. More secure than the pixel.
             </p>
             <div>
               <div className="label">Webhook secret (keep private)</div>

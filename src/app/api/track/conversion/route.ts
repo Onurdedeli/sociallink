@@ -2,7 +2,13 @@ import { NextRequest, NextResponse } from "next/server";
 import { nanoid } from "nanoid";
 import { z } from "zod";
 import { db } from "@/db";
-import { trackingCodes, campaigns, conversions } from "@/db/schema";
+import {
+  trackingCodes,
+  campaigns,
+  conversions,
+  PLATFORMS,
+  Platform,
+} from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { hmacVerify } from "@/lib/hmac";
 import { conversionLimit } from "@/lib/ratelimit";
@@ -12,6 +18,7 @@ const Body = z.object({
   code: z.string().min(1),
   orderId: z.string().optional(),
   amountCents: z.number().int().nonnegative().default(0),
+  platform: z.string().optional(),
   metadata: z.record(z.unknown()).optional(),
 });
 
@@ -51,7 +58,7 @@ export async function POST(req: NextRequest) {
   if (!parsed.success) {
     return NextResponse.json({ error: parsed.error.flatten() }, { status: 400 });
   }
-  const { code, orderId, amountCents, metadata } = parsed.data;
+  const { code, orderId, amountCents, platform, metadata } = parsed.data;
 
   const tc = await db
     .select()
@@ -73,6 +80,11 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
   }
 
+  const normalizedPlatform = (PLATFORMS as readonly string[]).includes(
+    (platform || "").toLowerCase()
+  )
+    ? ((platform || "").toLowerCase() as Platform)
+    : tc.platform;
   const commissionCents = Math.floor((amountCents * c.commissionBps) / 10000);
 
   const id = nanoid(14);
@@ -82,6 +94,8 @@ export async function POST(req: NextRequest) {
     orderId: orderId || null,
     amountCents,
     commissionCents,
+    platform: normalizedPlatform,
+    source: "webhook",
     metadata: metadata || null,
   });
 

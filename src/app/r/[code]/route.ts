@@ -59,9 +59,11 @@ export async function GET(
     isBot: bot.isBot,
   });
 
-  // Append tracking code as a query param so the brand can echo it back via conversion webhook
+  // Append tracking code (and platform) as query params so the brand's pixel
+  // can echo them back via conversion webhook.
   const target = new URL(c.targetUrl);
   target.searchParams.set("sl", tc.code);
+  if (platform && platform !== "other") target.searchParams.set("slp", platform);
 
   return NextResponse.redirect(target.toString(), {
     status: 302,
