@@ -4,18 +4,26 @@ import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/db";
 import { campaigns, clicks, conversions, trackingCodes, users, PLATFORMS } from "@/db/schema";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
-import { fmtMoney, fmtNum, fmtPct, fmtDate } from "@/lib/format";
+import { fmtMoney, fmtNum, fmtPct, fmtDate, epcCents } from "@/lib/format";
 import { joinCampaignAction, setStatusAction } from "./actions";
 import { CopyButton } from "@/components/copy-button";
+
+type SourceFilter = "all" | "webhook" | "pixel";
 
 export const dynamic = "force-dynamic";
 
 export default async function CampaignDetail({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<{ source?: string }>;
 }) {
   const { id } = await params;
+  const { source: sourceParam } = await searchParams;
+  const source: SourceFilter =
+    sourceParam === "pixel" || sourceParam === "webhook" ? sourceParam : "all";
+
   const user = await getCurrentUser();
   if (!user) redirect("/sign-in");
 
@@ -49,19 +57,38 @@ export default async function CampaignDetail({
         .groupBy(clicks.code, clicks.platform)
         
     : [];
+  const convWhere = codeIds.length
+    ? source === "all"
+      ? inArray(conversions.code, codeIds)
+      : and(inArray(conversions.code, codeIds), eq(conversions.source, source))
+    : undefined;
   const convAgg = codeIds.length
     ? await db
         .select({
           code: conversions.code,
+          platform: conversions.platform,
           n: sql<number>`count(*)`,
           rev: sql<number>`coalesce(sum(${conversions.amountCents}),0)`,
           com: sql<number>`coalesce(sum(${conversions.commissionCents}),0)`,
         })
         .from(conversions)
-        .where(inArray(conversions.code, codeIds))
-        .groupBy(conversions.code)
-        
+        .where(convWhere)
+        .groupBy(conversions.code, conversions.platform)
     : [];
+
+  // Source counts for the toggle UI labels
+  const sourceCounts = codeIds.length
+    ? await db
+        .select({
+          source: conversions.source,
+          n: sql<number>`count(*)`,
+        })
+        .from(conversions)
+        .where(inArray(conversions.code, codeIds))
+        .groupBy(conversions.source)
+    : [];
+  const countBySource = Object.fromEntries(sourceCounts.map((r) => [r.source, Number(r.n)]));
+  const totalConvAll = (countBySource.webhook ?? 0) + (countBySource.pixel ?? 0);
 
   const totals = {
     clicks: clickAgg.reduce((a, r) => a + Number(r.n), 0),
@@ -70,11 +97,21 @@ export default async function CampaignDetail({
     commission: convAgg.reduce((a, r) => a + Number(r.com), 0),
   };
 
-  const platformBreakdown: Record<string, number> = {};
+  const platformClicks: Record<string, number> = {};
   for (const r of clickAgg) {
     const p = r.platform || "other";
-    platformBreakdown[p] = (platformBreakdown[p] || 0) + Number(r.n);
+    platformClicks[p] = (platformClicks[p] || 0) + Number(r.n);
   }
+  const platformConversions: Record<string, { conv: number; rev: number; com: number }> = {};
+  const tcByCode = new Map(codes.map((tc) => [tc.code, tc]));
+  for (const r of convAgg) {
+    const p = r.platform || tcByCode.get(r.code)?.platform || "other";
+    platformConversions[p] ||= { conv: 0, rev: 0, com: 0 };
+    platformConversions[p].conv += Number(r.n);
+    platformConversions[p].rev += Number(r.rev);
+    platformConversions[p].com += Number(r.com);
+  }
+  const platformKeys = Array.from(new Set([...Object.keys(platformClicks), ...Object.keys(platformConversions)]));
 
   const influencerIds = Array.from(new Set(codes.map((tc) => tc.influencerId)));
   const influencers = influencerIds.length
@@ -86,7 +123,12 @@ export default async function CampaignDetail({
   const perCodeClicks: Record<string, number> = {};
   for (const r of clickAgg) perCodeClicks[r.code] = (perCodeClicks[r.code] || 0) + Number(r.n);
   const perCodeConv: Record<string, { n: number; rev: number; com: number }> = {};
-  for (const r of convAgg) perCodeConv[r.code] = { n: Number(r.n), rev: Number(r.rev), com: Number(r.com) };
+  for (const r of convAgg) {
+    perCodeConv[r.code] ||= { n: 0, rev: 0, com: 0 };
+    perCodeConv[r.code].n += Number(r.n);
+    perCodeConv[r.code].rev += Number(r.rev);
+    perCodeConv[r.code].com += Number(r.com);
+  }
 
   const recentClicks = codeIds.length
     ? await db
@@ -118,11 +160,25 @@ export default async function CampaignDetail({
 
       {c.description && <p className="text-slate-700">{c.description}</p>}
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
         <KPI label="Tracking codes" value={fmtNum(codes.length)} />
         <KPI label="Clicks" value={fmtNum(totals.clicks)} />
         <KPI label="Conversions" value={fmtNum(totals.conversions)} />
         <KPI label="Revenue" value={fmtMoney(totals.revenue)} />
+        <KPI label="EPC" value={fmtMoney(epcCents(totals.commission, totals.clicks))} />
+      </div>
+
+      {/* Source filter */}
+      <div className="flex flex-wrap items-center gap-2 text-sm">
+        <span className="text-slate-600">Conversion source:</span>
+        <SourceTab active={source === "all"} href={`/campaigns/${c.id}`} label={`All (${fmtNum(totalConvAll)})`} />
+        <SourceTab active={source === "pixel"} href={`/campaigns/${c.id}?source=pixel`} label={`Pixel (${fmtNum(countBySource.pixel ?? 0)})`} />
+        <SourceTab active={source === "webhook"} href={`/campaigns/${c.id}?source=webhook`} label={`Webhook (${fmtNum(countBySource.webhook ?? 0)})`} />
+        {source !== "all" && (
+          <span className="text-xs text-slate-500 ml-2">
+            Showing conversions from <strong>{source}</strong> only. Clicks are unfiltered.
+          </span>
+        )}
       </div>
 
       {/* Influencer join / copy link */}
@@ -163,21 +219,31 @@ export default async function CampaignDetail({
 
       {/* Platform breakdown */}
       <section>
-        <h2 className="text-lg font-semibold mb-2">Clicks by platform</h2>
+        <h2 className="text-lg font-semibold mb-2">By platform</h2>
         <div className="card overflow-x-auto">
           <table className="table">
-            <thead><tr><th>Platform</th><th>Clicks</th><th>Share</th></tr></thead>
+            <thead><tr><th>Platform</th><th>Clicks</th><th>Conv.</th><th>CR</th><th>Revenue</th><th>Commission</th><th>EPC</th></tr></thead>
             <tbody>
-              {Object.keys(platformBreakdown).length === 0 && (
-                <tr><td colSpan={3} className="text-center text-slate-500 py-6">No clicks yet.</td></tr>
+              {platformKeys.length === 0 && (
+                <tr><td colSpan={7} className="text-center text-slate-500 py-6">No traffic yet.</td></tr>
               )}
-              {Object.entries(platformBreakdown).sort((a, b) => b[1] - a[1]).map(([p, n]) => (
-                <tr key={p}>
-                  <td className="capitalize font-medium">{p}</td>
-                  <td>{fmtNum(n)}</td>
-                  <td className="text-slate-500">{totals.clicks ? ((n / totals.clicks) * 100).toFixed(1) : "0"}%</td>
-                </tr>
-              ))}
+              {platformKeys
+                .sort((a, b) => (platformClicks[b] || 0) - (platformClicks[a] || 0))
+                .map((p) => {
+                  const cl = platformClicks[p] || 0;
+                  const cv = platformConversions[p] || { conv: 0, rev: 0, com: 0 };
+                  return (
+                    <tr key={p}>
+                      <td className="capitalize font-medium">{p}</td>
+                      <td>{fmtNum(cl)}</td>
+                      <td>{fmtNum(cv.conv)}</td>
+                      <td className="text-slate-500">{cl > 0 ? ((cv.conv / cl) * 100).toFixed(1) + "%" : "—"}</td>
+                      <td>{fmtMoney(cv.rev)}</td>
+                      <td>{fmtMoney(cv.com)}</td>
+                      <td>{fmtMoney(epcCents(cv.com, cl))}</td>
+                    </tr>
+                  );
+                })}
             </tbody>
           </table>
         </div>
@@ -191,16 +257,17 @@ export default async function CampaignDetail({
             <thead>
               <tr>
                 <th>Influencer</th><th>Platform</th><th>Code</th>
-                <th>Clicks</th><th>Conv.</th><th>Revenue</th><th>Commission</th>
+                <th>Clicks</th><th>Conv.</th><th>Revenue</th><th>Commission</th><th>EPC</th>
               </tr>
             </thead>
             <tbody>
               {codes.length === 0 && (
-                <tr><td colSpan={7} className="text-center text-slate-500 py-6">No creators have joined yet.</td></tr>
+                <tr><td colSpan={8} className="text-center text-slate-500 py-6">No creators have joined yet.</td></tr>
               )}
               {codes.map((tc) => {
                 const inf = infMap.get(tc.influencerId);
                 const cv = perCodeConv[tc.code] || { n: 0, rev: 0, com: 0 };
+                const cl = perCodeClicks[tc.code] || 0;
                 const canSee = isOwner || (user.role === "influencer" && tc.influencerId === user.id);
                 const name = canSee ? (inf?.name || "creator") : "(hidden)";
                 return (
@@ -208,10 +275,11 @@ export default async function CampaignDetail({
                     <td className="font-medium">{name}</td>
                     <td className="capitalize">{tc.platform}</td>
                     <td><code className="text-xs">{tc.code}</code></td>
-                    <td>{fmtNum(perCodeClicks[tc.code] || 0)}</td>
+                    <td>{fmtNum(cl)}</td>
                     <td>{fmtNum(cv.n)}</td>
                     <td>{fmtMoney(cv.rev)}</td>
                     <td>{fmtMoney(cv.com)}</td>
+                    <td>{fmtMoney(epcCents(cv.com, cl))}</td>
                   </tr>
                 );
               })}
@@ -337,6 +405,17 @@ await fetch('${appUrl}/api/track/conversion', {
         <Link href="/dashboard" className="text-sm text-slate-500 hover:underline">← Back to dashboard</Link>
       </div>
     </div>
+  );
+}
+
+function SourceTab({ active, href, label }: { active: boolean; href: string; label: string }) {
+  const cls = active
+    ? "inline-flex items-center rounded-md px-3 py-1 text-xs font-medium bg-brand-600 text-white"
+    : "inline-flex items-center rounded-md px-3 py-1 text-xs font-medium bg-white ring-1 ring-slate-200 text-slate-700 hover:bg-slate-50";
+  return (
+    <Link href={href} className={cls}>
+      {label}
+    </Link>
   );
 }
 

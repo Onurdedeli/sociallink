@@ -13,3 +13,7 @@ export const fmtDate = (d: Date | number | null | undefined) => {
   const dt = typeof d === "number" ? new Date(d * 1000) : d;
   return dt.toLocaleString();
 };
+
+/** Earnings per click, in cents. Returns 0 when there are no clicks. */
+export const epcCents = (commissionCents: number, clicks: number) =>
+  clicks > 0 ? Math.round(commissionCents / clicks) : 0;

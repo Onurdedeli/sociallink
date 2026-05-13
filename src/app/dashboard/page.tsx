@@ -5,7 +5,7 @@ import { db } from "@/db";
 import { campaigns, trackingCodes, users } from "@/db/schema";
 import { eq, desc, inArray } from "drizzle-orm";
 import { statsForCampaigns, statsForInfluencer } from "@/lib/analytics";
-import { fmtMoney, fmtNum, fmtPct } from "@/lib/format";
+import { fmtMoney, fmtNum, fmtPct, epcCents } from "@/lib/format";
 
 export const dynamic = "force-dynamic";
 
@@ -38,11 +38,12 @@ export default async function DashboardPage() {
           <Link href="/campaigns/new" className="btn-primary">New campaign</Link>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
           <KPI label="Campaigns" value={fmtNum(myCampaigns.length)} />
           <KPI label="Clicks" value={fmtNum(totals.clicks)} />
           <KPI label="Conversions" value={fmtNum(totals.conversions)} />
           <KPI label="Revenue tracked" value={fmtMoney(totals.revenue)} />
+          <KPI label="EPC paid" value={fmtMoney(epcCents(totals.commission, totals.clicks))} />
         </div>
 
         <div className="card overflow-x-auto">
@@ -50,12 +51,12 @@ export default async function DashboardPage() {
             <thead>
               <tr>
                 <th>Campaign</th><th>Status</th><th>Payout</th><th>Influencers</th>
-                <th>Clicks</th><th>Conv.</th><th>Revenue</th><th>Commission</th><th></th>
+                <th>Clicks</th><th>Conv.</th><th>Revenue</th><th>Commission</th><th>EPC</th><th></th>
               </tr>
             </thead>
             <tbody>
               {myCampaigns.length === 0 && (
-                <tr><td colSpan={9} className="text-center text-slate-500 py-8">No campaigns yet — create your first.</td></tr>
+                <tr><td colSpan={10} className="text-center text-slate-500 py-8">No campaigns yet — create your first.</td></tr>
               )}
               {myCampaigns.map((c) => {
                 const s = stats[c.id];
@@ -73,6 +74,7 @@ export default async function DashboardPage() {
                     <td>{fmtNum(s.conversions)}</td>
                     <td>{fmtMoney(s.revenueCents)}</td>
                     <td>{fmtMoney(s.commissionCents)}</td>
+                    <td>{fmtMoney(epcCents(s.commissionCents, s.clicks))}</td>
                     <td><Link href={`/campaigns/${c.id}`} className="text-brand-600 hover:underline">Open →</Link></td>
                   </tr>
                 );
@@ -106,28 +108,31 @@ export default async function DashboardPage() {
         <Link href="/campaigns" className="btn-primary">Browse campaigns</Link>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-5 gap-4">
         <KPI label="Tracking codes" value={fmtNum(s.codes.length)} />
         <KPI label="Total clicks" value={fmtNum(s.totalClicks)} />
         <KPI label="Conversions" value={fmtNum(s.totalConversions)} />
         <KPI label="Earnings" value={fmtMoney(s.totalCommission)} />
+        <KPI label="EPC" value={fmtMoney(epcCents(s.totalCommission, s.totalClicks))} />
       </div>
 
       <section>
         <h2 className="text-lg font-semibold mb-2">By platform</h2>
         <div className="card overflow-x-auto">
           <table className="table">
-            <thead><tr><th>Platform</th><th>Clicks</th><th>Conv.</th><th>Earnings</th></tr></thead>
+            <thead><tr><th>Platform</th><th>Clicks</th><th>Conv.</th><th>CR</th><th>Earnings</th><th>EPC</th></tr></thead>
             <tbody>
               {Object.keys(s.byPlatform).length === 0 && (
-                <tr><td colSpan={4} className="text-center text-slate-500 py-6">No traffic yet.</td></tr>
+                <tr><td colSpan={6} className="text-center text-slate-500 py-6">No traffic yet.</td></tr>
               )}
               {Object.entries(s.byPlatform).map(([p, d]) => (
                 <tr key={p}>
                   <td className="capitalize font-medium">{p}</td>
                   <td>{fmtNum(d.clicks)}</td>
                   <td>{fmtNum(d.conversions)}</td>
+                  <td className="text-slate-500">{d.clicks > 0 ? ((d.conversions / d.clicks) * 100).toFixed(1) + "%" : "—"}</td>
                   <td>{fmtMoney(d.commission)}</td>
+                  <td>{fmtMoney(epcCents(d.commission, d.clicks))}</td>
                 </tr>
               ))}
             </tbody>

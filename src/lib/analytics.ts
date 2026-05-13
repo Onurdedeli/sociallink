@@ -2,6 +2,13 @@ import { db } from "@/db";
 import { campaigns, clicks, conversions, trackingCodes } from "@/db/schema";
 import { and, eq, inArray, sql } from "drizzle-orm";
 
+export type ConversionSource = "all" | "webhook" | "pixel";
+
+function sourceFilter(source: ConversionSource) {
+  if (source === "all") return undefined;
+  return eq(conversions.source, source);
+}
+
 export type CampaignStats = {
   campaignId: string;
   clicks: number;
