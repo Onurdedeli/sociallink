@@ -13,3 +13,4 @@ drizzle/
 .vercel
 .env*.local
 prod-brand-dashboard.png
+campaign-*.png
