@@ -474,7 +474,7 @@ await fetch('${appUrl}/api/track/conversion', {
               </pre>
             </div>
             <p className="text-slate-600">
-              Commission ({fmtPct(c.commissionBps)}) is computed automatically and
+              Payout (<strong>{describePayout(c)}</strong>) is computed automatically and
               attributed to the right creator.
             </p>
           </div>
