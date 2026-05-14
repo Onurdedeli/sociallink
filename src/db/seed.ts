@@ -101,10 +101,9 @@ async function main() {
       brandId: b.id,
       title: `${b.companyName || b.name} — Welcome offer`,
       description:
-        "Promote our welcome offer on any platform. Earn 15% commission on every purchase plus a click bonus.",
+        "Promote our welcome offer on any platform. Earn 15% commission on every purchase.",
       targetUrl: b.website || "https://example.com",
-      cpcCents: 5,
-      cpmCents: 0,
+      payoutModel: "cpa_percent",
       commissionBps: 1500,
       budgetCents: 50000,
       status: "active",

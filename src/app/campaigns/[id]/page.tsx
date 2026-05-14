@@ -5,6 +5,7 @@ import { db } from "@/db";
 import { campaigns, clicks, conversions, trackingCodes, users, PLATFORMS } from "@/db/schema";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { fmtMoney, fmtNum, fmtPct, fmtDate, epcCents, fmtBotRate } from "@/lib/format";
+import { describePayout, totalEarningsCents } from "@/lib/payout";
 import { dailyForCampaign } from "@/lib/timeseries";
 import { joinCampaignAction, setStatusAction } from "./actions";
 import { CopyButton } from "@/components/copy-button";
@@ -105,6 +106,7 @@ export default async function CampaignDetail({
     revenue: convAgg.reduce((a, r) => a + Number(r.rev), 0),
     commission: convAgg.reduce((a, r) => a + Number(r.com), 0),
   };
+  const totalEarnings = totalEarningsCents(c, totals.clicks, totals.commission);
 
   const platformClicks: Record<string, { total: number; bot: number }> = {};
   for (const r of clickAgg) {
@@ -167,9 +169,7 @@ export default async function CampaignDetail({
           </p>
         </div>
         <div className="flex flex-wrap gap-2 text-xs">
-          {c.cpcCents > 0 && <span className="badge-gray">CPC {fmtMoney(c.cpcCents)}</span>}
-          {c.cpmCents > 0 && <span className="badge-gray">CPM {fmtMoney(c.cpmCents)}</span>}
-          {c.commissionBps > 0 && <span className="badge-gray">Commission {fmtPct(c.commissionBps)}</span>}
+          <span className="badge bg-brand-50 text-brand-700 ring-brand-200">{describePayout(c)}</span>
           {c.budgetCents > 0 && <span className="badge-gray">Budget {fmtMoney(c.budgetCents)}</span>}
         </div>
       </div>
@@ -185,8 +185,8 @@ export default async function CampaignDetail({
         />
         <KPI label="Conversions" value={fmtNum(totals.conversions)} />
         <KPI label="Revenue" value={fmtMoney(totals.revenue)} />
-        <KPI label="EPC" value={fmtMoney(epcCents(totals.commission, totals.clicks))} />
-        <KPI label="Bot rate" value={fmtBotRate(totals.botClicks, totals.clicks)} />
+        <KPI label={isOwner ? "Payout" : "Earnings"} value={fmtMoney(totalEarnings)} sub={describePayout(c)} />
+        <KPI label="EPC" value={fmtMoney(epcCents(totalEarnings, totals.clicks))} />
       </div>
 
       <div className="flex items-center justify-end">
@@ -278,7 +278,7 @@ export default async function CampaignDetail({
         <h2 className="text-lg font-semibold mb-2">By platform</h2>
         <div className="card overflow-x-auto">
           <table className="table">
-            <thead><tr><th>Platform</th><th>Clicks</th><th>Bot %</th><th>Conv.</th><th>CR</th><th>Revenue</th><th>Commission</th><th>EPC</th></tr></thead>
+            <thead><tr><th>Platform</th><th>Clicks</th><th>Bot %</th><th>Conv.</th><th>CR</th><th>Revenue</th><th>Earnings</th><th>EPC</th></tr></thead>
             <tbody>
               {platformKeys.length === 0 && (
                 <tr><td colSpan={8} className="text-center text-slate-500 py-6">No traffic yet.</td></tr>
@@ -288,6 +288,7 @@ export default async function CampaignDetail({
                 .map((p) => {
                   const pc = platformClicks[p] || { total: 0, bot: 0 };
                   const cv = platformConversions[p] || { conv: 0, rev: 0, com: 0 };
+                  const earnings = totalEarningsCents(c, pc.total, cv.com);
                   return (
                     <tr key={p}>
                       <td className="capitalize font-medium">{p}</td>
@@ -303,8 +304,8 @@ export default async function CampaignDetail({
                       <td>{fmtNum(cv.conv)}</td>
                       <td className="text-slate-500">{pc.total > 0 ? ((cv.conv / pc.total) * 100).toFixed(1) + "%" : "—"}</td>
                       <td>{fmtMoney(cv.rev)}</td>
-                      <td>{fmtMoney(cv.com)}</td>
-                      <td>{fmtMoney(epcCents(cv.com, pc.total))}</td>
+                      <td>{fmtMoney(earnings)}</td>
+                      <td>{fmtMoney(epcCents(earnings, pc.total))}</td>
                     </tr>
                   );
                 })}
@@ -321,7 +322,7 @@ export default async function CampaignDetail({
             <thead>
               <tr>
                 <th>Influencer</th><th>Platform</th><th>Code</th>
-                <th>Clicks</th><th>Bot %</th><th>Conv.</th><th>Revenue</th><th>Commission</th><th>EPC</th>
+                <th>Clicks</th><th>Bot %</th><th>Conv.</th><th>Revenue</th><th>Earnings</th><th>EPC</th>
               </tr>
             </thead>
             <tbody>
@@ -333,6 +334,7 @@ export default async function CampaignDetail({
                 const cv = perCodeConv[tc.code] || { n: 0, rev: 0, com: 0 };
                 const cl = perCodeClicks[tc.code] || 0;
                 const bots = perCodeBots[tc.code] || 0;
+                const earnings = totalEarningsCents(c, cl, cv.com);
                 const canSee = isOwner || (user.role === "influencer" && tc.influencerId === user.id);
                 const name = canSee ? (inf?.name || "creator") : "(hidden)";
                 return (
@@ -351,8 +353,8 @@ export default async function CampaignDetail({
                     </td>
                     <td>{fmtNum(cv.n)}</td>
                     <td>{fmtMoney(cv.rev)}</td>
-                    <td>{fmtMoney(cv.com)}</td>
-                    <td>{fmtMoney(epcCents(cv.com, cl))}</td>
+                    <td>{fmtMoney(earnings)}</td>
+                    <td>{fmtMoney(epcCents(earnings, cl))}</td>
                   </tr>
                 );
               })}

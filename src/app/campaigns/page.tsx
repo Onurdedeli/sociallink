@@ -4,7 +4,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/db";
 import { campaigns, users, trackingCodes } from "@/db/schema";
 import { eq, desc, inArray } from "drizzle-orm";
-import { fmtMoney, fmtPct } from "@/lib/format";
+import { describePayout } from "@/lib/payout";
 
 export const dynamic = "force-dynamic";
 
@@ -52,10 +52,10 @@ export default async function CampaignsPage() {
                 </div>
                 <div className="mt-1 text-xs text-slate-500">{b?.companyName || b?.name}</div>
                 <p className="mt-2 text-sm text-slate-600 line-clamp-3">{c.description || "—"}</p>
-                <div className="mt-3 flex flex-wrap gap-2 text-xs">
-                  {c.cpcCents > 0 && <span className="badge-gray">CPC {fmtMoney(c.cpcCents)}</span>}
-                  {c.cpmCents > 0 && <span className="badge-gray">CPM {fmtMoney(c.cpmCents)}</span>}
-                  {c.commissionBps > 0 && <span className="badge-gray">Comm. {fmtPct(c.commissionBps)}</span>}
+                <div className="mt-3">
+                  <span className="badge bg-brand-50 text-brand-700 ring-brand-200">
+                    {describePayout(c)}
+                  </span>
                 </div>
                 <div className="mt-4 flex gap-2">
                   <Link href={`/campaigns/${c.id}`} className="btn-secondary flex-1 text-center">

@@ -12,6 +12,7 @@ import {
 import { and, eq } from "drizzle-orm";
 import { conversionLimit } from "@/lib/ratelimit";
 import { readClientIp } from "@/lib/ip";
+import { commissionForConversion } from "@/lib/payout";
 
 const CORS = {
   "access-control-allow-origin": "*",
@@ -85,7 +86,7 @@ export async function POST(req: NextRequest) {
   )
     ? ((platform || "").toLowerCase() as Platform)
     : tc.platform;
-  const commissionCents = Math.floor((amountCents * c.commissionBps) / 10000);
+  const commissionCents = commissionForConversion(c, amountCents);
 
   const id = nanoid(14);
   await db.insert(conversions).values({

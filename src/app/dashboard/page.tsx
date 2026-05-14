@@ -2,13 +2,14 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { getCurrentUser } from "@/lib/auth";
 import { db } from "@/db";
-import { campaigns, trackingCodes, users } from "@/db/schema";
-import { eq, desc, inArray } from "drizzle-orm";
+import { campaigns, clicks, conversions, trackingCodes, users } from "@/db/schema";
+import { eq, desc, inArray, sql } from "drizzle-orm";
 import { statsForCampaigns, statsForInfluencer } from "@/lib/analytics";
 import { dailyForCampaigns, dailyForInfluencer } from "@/lib/timeseries";
 import { fmtMoney, fmtNum, fmtPct, epcCents, fmtBotRate } from "@/lib/format";
 import { ClicksChart, RevenueChart } from "@/components/time-series-chart";
 import { RangeToggle, parseRange } from "@/components/range-toggle";
+import { describePayout, totalEarningsCents } from "@/lib/payout";
 
 export const dynamic = "force-dynamic";
 
@@ -32,6 +33,14 @@ export default async function DashboardPage({
       ;
     const stats = await statsForCampaigns(myCampaigns.map((c) => c.id));
     const daily = await dailyForCampaigns(myCampaigns.map((c) => c.id), days);
+    const earningsByCampaign: Record<string, number> = {};
+    let totalEarnings = 0;
+    for (const c of myCampaigns) {
+      const s = stats[c.id];
+      const e = totalEarningsCents(c, s.clicks, s.commissionCents);
+      earningsByCampaign[c.id] = e;
+      totalEarnings += e;
+    }
     const totals = Object.values(stats).reduce(
       (acc, s) => ({
         clicks: acc.clicks + s.clicks,
@@ -60,7 +69,7 @@ export default async function DashboardPage({
           />
           <KPI label="Conversions" value={fmtNum(totals.conversions)} />
           <KPI label="Revenue tracked" value={fmtMoney(totals.revenue)} />
-          <KPI label="EPC paid" value={fmtMoney(epcCents(totals.commission, totals.clicks))} />
+          <KPI label="Total payout" value={fmtMoney(totalEarnings)} sub="What you owe creators" />
           <KPI label="Bot rate" value={fmtBotRate(totals.botClicks, totals.clicks)} />
         </div>
 
@@ -88,8 +97,8 @@ export default async function DashboardPage({
           <table className="table">
             <thead>
               <tr>
-                <th>Campaign</th><th>Status</th><th>Payout</th><th>Influencers</th>
-                <th>Clicks</th><th>Bot %</th><th>Conv.</th><th>Revenue</th><th>Commission</th><th>EPC</th><th></th>
+                <th>Campaign</th><th>Status</th><th>Payout model</th><th>Influencers</th>
+                <th>Clicks</th><th>Bot %</th><th>Conv.</th><th>Revenue</th><th>Payout</th><th>EPC</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -98,15 +107,12 @@ export default async function DashboardPage({
               )}
               {myCampaigns.map((c) => {
                 const s = stats[c.id];
+                const earnings = earningsByCampaign[c.id];
                 return (
                   <tr key={c.id}>
                     <td className="font-medium">{c.title}</td>
                     <td><StatusBadge status={c.status} /></td>
-                    <td className="text-xs text-slate-600">
-                      {c.cpcCents > 0 && <div>CPC {fmtMoney(c.cpcCents)}</div>}
-                      {c.cpmCents > 0 && <div>CPM {fmtMoney(c.cpmCents)}</div>}
-                      {c.commissionBps > 0 && <div>Comm. {fmtPct(c.commissionBps)}</div>}
-                    </td>
+                    <td className="text-xs text-slate-700">{describePayout(c)}</td>
                     <td>{fmtNum(s.uniqueInfluencers)}</td>
                     <td>
                       {fmtNum(s.clicks)}
@@ -119,8 +125,8 @@ export default async function DashboardPage({
                     </td>
                     <td>{fmtNum(s.conversions)}</td>
                     <td>{fmtMoney(s.revenueCents)}</td>
-                    <td>{fmtMoney(s.commissionCents)}</td>
-                    <td>{fmtMoney(epcCents(s.commissionCents, s.clicks))}</td>
+                    <td className="font-medium">{fmtMoney(earnings)}</td>
+                    <td>{fmtMoney(epcCents(earnings, s.clicks))}</td>
                     <td><Link href={`/campaigns/${c.id}`} className="text-brand-600 hover:underline">Open →</Link></td>
                   </tr>
                 );
@@ -140,6 +146,42 @@ export default async function DashboardPage({
   const myCampaigns = campaignIds.length
     ? await db.select().from(campaigns).where(inArray(campaigns.id, campaignIds))
     : [];
+  const campMap = new Map(myCampaigns.map((c) => [c.id, c]));
+
+  // Per-code earnings using each campaign's payout model
+  const codeIdList = s.codes.map((c) => c.code);
+  const perCodeClicks: Record<string, number> = {};
+  const perCodeCommission: Record<string, number> = {};
+  if (codeIdList.length > 0) {
+    const cl = await db
+      .select({ code: clicks.code, n: sql<number>`count(*)` })
+      .from(clicks)
+      .where(inArray(clicks.code, codeIdList))
+      .groupBy(clicks.code);
+    for (const r of cl) perCodeClicks[r.code] = Number(r.n);
+    const cv = await db
+      .select({
+        code: conversions.code,
+        com: sql<number>`coalesce(sum(${conversions.commissionCents}),0)`,
+      })
+      .from(conversions)
+      .where(inArray(conversions.code, codeIdList))
+      .groupBy(conversions.code);
+    for (const r of cv) perCodeCommission[r.code] = Number(r.com);
+  }
+  const earningsByCode: Record<string, number> = {};
+  let totalCreatorEarnings = 0;
+  for (const tc of s.codes) {
+    const camp = campMap.get(tc.campaignId);
+    if (!camp) continue;
+    const e = totalEarningsCents(
+      camp,
+      perCodeClicks[tc.code] || 0,
+      perCodeCommission[tc.code] || 0
+    );
+    earningsByCode[tc.code] = e;
+    totalCreatorEarnings += e;
+  }
   const brandIds = Array.from(new Set(myCampaigns.map((c) => c.brandId)));
   const brandRows = brandIds.length
     ? await db.select().from(users).where(inArray(users.id, brandIds))
@@ -163,8 +205,8 @@ export default async function DashboardPage({
           sub={`${fmtNum(s.totalBotClicks)} bots · ${fmtBotRate(s.totalBotClicks, s.totalClicks)}`}
         />
         <KPI label="Conversions" value={fmtNum(s.totalConversions)} />
-        <KPI label="Earnings" value={fmtMoney(s.totalCommission)} />
-        <KPI label="EPC" value={fmtMoney(epcCents(s.totalCommission, s.totalClicks))} />
+        <KPI label="Earnings" value={fmtMoney(totalCreatorEarnings)} sub="across all payout models" />
+        <KPI label="EPC" value={fmtMoney(epcCents(totalCreatorEarnings, s.totalClicks))} />
         <KPI label="Bot rate" value={fmtBotRate(s.totalBotClicks, s.totalClicks)} />
       </div>
 
@@ -224,24 +266,24 @@ export default async function DashboardPage({
         <h2 className="text-lg font-semibold mb-2">My tracking links</h2>
         <div className="card overflow-x-auto">
           <table className="table">
-            <thead><tr><th>Campaign</th><th>Brand</th><th>Platform</th><th>Code</th><th>Link</th></tr></thead>
+            <thead><tr><th>Campaign</th><th>Brand</th><th>Payout</th><th>Platform</th><th>Code</th><th>Earnings</th></tr></thead>
             <tbody>
               {s.codes.length === 0 && (
-                <tr><td colSpan={5} className="text-center text-slate-500 py-6">
+                <tr><td colSpan={6} className="text-center text-slate-500 py-6">
                   <Link href="/campaigns" className="text-brand-600 underline">Browse open campaigns →</Link>
                 </td></tr>
               )}
               {s.codes.map((tc) => {
                 const c = campaignMap.get(tc.campaignId);
                 const b = c ? brandMap.get(c.brandId) : null;
-                const url = `${appUrl}/r/${tc.code}?p=${tc.platform}`;
                 return (
                   <tr key={tc.code}>
                     <td><Link href={`/campaigns/${tc.campaignId}`} className="font-medium hover:underline">{c?.title || "—"}</Link></td>
                     <td>{b?.companyName || b?.name || "—"}</td>
+                    <td className="text-xs">{c ? describePayout(c) : "—"}</td>
                     <td className="capitalize">{tc.platform}</td>
                     <td><code className="text-xs">{tc.code}</code></td>
-                    <td><code className="text-xs break-all">{url}</code></td>
+                    <td className="font-medium">{fmtMoney(earningsByCode[tc.code] || 0)}</td>
                   </tr>
                 );
               })}

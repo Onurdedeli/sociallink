@@ -24,6 +24,16 @@ export type Platform = (typeof PLATFORMS)[number];
 export const ROLES = ["brand", "influencer"] as const;
 export type Role = (typeof ROLES)[number];
 
+export const PAYOUT_MODELS = ["cpc", "cpm", "cpa_fixed", "cpa_percent"] as const;
+export type PayoutModel = (typeof PAYOUT_MODELS)[number];
+
+export const PAYOUT_MODEL_LABEL: Record<PayoutModel, string> = {
+  cpc: "Cost per Click (CPC)",
+  cpm: "Cost per Mille (CPM)",
+  cpa_fixed: "Cost per Sale — flat (CPA)",
+  cpa_percent: "Cost per Sale — commission %",
+};
+
 export const users = pgTable("users", {
   id: text("id").primaryKey(),
   email: text("email").notNull().unique(),
@@ -48,8 +58,12 @@ export const campaigns = pgTable("campaigns", {
   title: text("title").notNull(),
   description: text("description").notNull().default(""),
   targetUrl: text("target_url").notNull(),
+  payoutModel: text("payout_model", { enum: PAYOUT_MODELS })
+    .notNull()
+    .default("cpa_percent"),
   cpcCents: integer("cpc_cents").notNull().default(0),
   cpmCents: integer("cpm_cents").notNull().default(0),
+  cpaCents: integer("cpa_cents").notNull().default(0),
   commissionBps: integer("commission_bps").notNull().default(0),
   budgetCents: integer("budget_cents").notNull().default(0),
   webhookSecret: text("webhook_secret")
