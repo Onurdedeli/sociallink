@@ -9,6 +9,7 @@ import { dailyForCampaign } from "@/lib/timeseries";
 import { joinCampaignAction, setStatusAction } from "./actions";
 import { CopyButton } from "@/components/copy-button";
 import { ClicksChart, RevenueChart } from "@/components/time-series-chart";
+import { RangeToggle, parseRange } from "@/components/range-toggle";
 
 type SourceFilter = "all" | "webhook" | "pixel";
 
@@ -19,12 +20,15 @@ export default async function CampaignDetail({
   searchParams,
 }: {
   params: Promise<{ id: string }>;
-  searchParams: Promise<{ source?: string }>;
+  searchParams: Promise<{ source?: string; range?: string }>;
 }) {
   const { id } = await params;
-  const { source: sourceParam } = await searchParams;
+  const { source: sourceParam, range: rangeParam } = await searchParams;
   const source: SourceFilter =
     sourceParam === "pixel" || sourceParam === "webhook" ? sourceParam : "all";
+  const days = parseRange(rangeParam);
+  const rangeKey = days === 7 ? "7d" : undefined;
+  const sourceKey = source === "all" ? undefined : source;
 
   const user = await getCurrentUser();
   if (!user) redirect("/sign-in");
@@ -44,7 +48,7 @@ export default async function CampaignDetail({
         .limit(1).then((r) => r[0] ?? null)
     : null;
 
-  const daily = await dailyForCampaign(c.id);
+  const daily = await dailyForCampaign(c.id, days);
 
   // Aggregate stats over all codes
   const codes = await db.select().from(trackingCodes).where(eq(trackingCodes.campaignId, c.id));
@@ -185,17 +189,24 @@ export default async function CampaignDetail({
         <KPI label="Bot rate" value={fmtBotRate(totals.botClicks, totals.clicks)} />
       </div>
 
+      <div className="flex items-center justify-end">
+        <RangeToggle
+          active={days}
+          basePath={`/campaigns/${c.id}`}
+          preserve={{ range: rangeKey, source: sourceKey }}
+        />
+      </div>
       <section className="grid lg:grid-cols-2 gap-4">
         <div className="card">
           <div className="flex items-center justify-between mb-2">
-            <h2 className="font-semibold">Clicks (last 30 days)</h2>
+            <h2 className="font-semibold">Clicks (last {days} days)</h2>
             <span className="text-xs text-slate-500">Human + Bot stacked, conversions overlay</span>
           </div>
           <ClicksChart data={daily} />
         </div>
         <div className="card">
           <div className="flex items-center justify-between mb-2">
-            <h2 className="font-semibold">Revenue &amp; commission (last 30 days)</h2>
+            <h2 className="font-semibold">Revenue &amp; commission (last {days} days)</h2>
           </div>
           <RevenueChart data={daily} />
         </div>
@@ -204,9 +215,21 @@ export default async function CampaignDetail({
       {/* Source filter */}
       <div className="flex flex-wrap items-center gap-2 text-sm">
         <span className="text-slate-600">Conversion source:</span>
-        <SourceTab active={source === "all"} href={`/campaigns/${c.id}`} label={`All (${fmtNum(totalConvAll)})`} />
-        <SourceTab active={source === "pixel"} href={`/campaigns/${c.id}?source=pixel`} label={`Pixel (${fmtNum(countBySource.pixel ?? 0)})`} />
-        <SourceTab active={source === "webhook"} href={`/campaigns/${c.id}?source=webhook`} label={`Webhook (${fmtNum(countBySource.webhook ?? 0)})`} />
+        <SourceTab
+          active={source === "all"}
+          href={buildHref(`/campaigns/${c.id}`, { range: rangeKey })}
+          label={`All (${fmtNum(totalConvAll)})`}
+        />
+        <SourceTab
+          active={source === "pixel"}
+          href={buildHref(`/campaigns/${c.id}`, { source: "pixel", range: rangeKey })}
+          label={`Pixel (${fmtNum(countBySource.pixel ?? 0)})`}
+        />
+        <SourceTab
+          active={source === "webhook"}
+          href={buildHref(`/campaigns/${c.id}`, { source: "webhook", range: rangeKey })}
+          label={`Webhook (${fmtNum(countBySource.webhook ?? 0)})`}
+        />
         {source !== "all" && (
           <span className="text-xs text-slate-500 ml-2">
             Showing conversions from <strong>{source}</strong> only. Clicks are unfiltered.
@@ -461,6 +484,13 @@ await fetch('${appUrl}/api/track/conversion', {
       </div>
     </div>
   );
+}
+
+function buildHref(base: string, params: Record<string, string | undefined>) {
+  const sp = new URLSearchParams();
+  for (const [k, v] of Object.entries(params)) if (v) sp.set(k, v);
+  const qs = sp.toString();
+  return qs ? `${base}?${qs}` : base;
 }
 
 function SourceTab({ active, href, label }: { active: boolean; href: string; label: string }) {
