@@ -5,7 +5,9 @@ import { db } from "@/db";
 import { campaigns, trackingCodes, users } from "@/db/schema";
 import { eq, desc, inArray } from "drizzle-orm";
 import { statsForCampaigns, statsForInfluencer } from "@/lib/analytics";
+import { dailyForCampaigns, dailyForInfluencer } from "@/lib/timeseries";
 import { fmtMoney, fmtNum, fmtPct, epcCents, fmtBotRate } from "@/lib/format";
+import { ClicksChart, RevenueChart } from "@/components/time-series-chart";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +23,7 @@ export default async function DashboardPage() {
       .orderBy(desc(campaigns.createdAt))
       ;
     const stats = await statsForCampaigns(myCampaigns.map((c) => c.id));
+    const daily = await dailyForCampaigns(myCampaigns.map((c) => c.id));
     const totals = Object.values(stats).reduce(
       (acc, s) => ({
         clicks: acc.clicks + s.clicks,
@@ -52,6 +55,23 @@ export default async function DashboardPage() {
           <KPI label="EPC paid" value={fmtMoney(epcCents(totals.commission, totals.clicks))} />
           <KPI label="Bot rate" value={fmtBotRate(totals.botClicks, totals.clicks)} />
         </div>
+
+        <section className="grid lg:grid-cols-2 gap-4">
+          <div className="card">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="font-semibold">Clicks (last 30 days)</h2>
+              <span className="text-xs text-slate-500">Human + Bot stacked, conversions overlay</span>
+            </div>
+            <ClicksChart data={daily} />
+          </div>
+          <div className="card">
+            <div className="flex items-center justify-between mb-2">
+              <h2 className="font-semibold">Revenue &amp; commission (last 30 days)</h2>
+              <span className="text-xs text-slate-500">Tracked via webhook + pixel</span>
+            </div>
+            <RevenueChart data={daily} />
+          </div>
+        </section>
 
         <div className="card overflow-x-auto">
           <table className="table">
@@ -103,6 +123,7 @@ export default async function DashboardPage() {
 
   // Influencer dashboard
   const s = await statsForInfluencer(user.id);
+  const daily = await dailyForInfluencer(user.id);
 
   const campaignIds = Array.from(new Set(s.codes.map((c) => c.campaignId)));
   const myCampaigns = campaignIds.length
@@ -135,6 +156,23 @@ export default async function DashboardPage() {
         <KPI label="EPC" value={fmtMoney(epcCents(s.totalCommission, s.totalClicks))} />
         <KPI label="Bot rate" value={fmtBotRate(s.totalBotClicks, s.totalClicks)} />
       </div>
+
+      <section className="grid lg:grid-cols-2 gap-4">
+        <div className="card">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="font-semibold">Clicks (last 30 days)</h2>
+            <span className="text-xs text-slate-500">Human + Bot stacked, conversions overlay</span>
+          </div>
+          <ClicksChart data={daily} />
+        </div>
+        <div className="card">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="font-semibold">Earnings (last 30 days)</h2>
+            <span className="text-xs text-slate-500">Commission per day</span>
+          </div>
+          <RevenueChart data={daily} />
+        </div>
+      </section>
 
       <section>
         <h2 className="text-lg font-semibold mb-2">By platform</h2>

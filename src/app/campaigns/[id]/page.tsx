@@ -5,8 +5,10 @@ import { db } from "@/db";
 import { campaigns, clicks, conversions, trackingCodes, users, PLATFORMS } from "@/db/schema";
 import { and, desc, eq, inArray, sql } from "drizzle-orm";
 import { fmtMoney, fmtNum, fmtPct, fmtDate, epcCents, fmtBotRate } from "@/lib/format";
+import { dailyForCampaign } from "@/lib/timeseries";
 import { joinCampaignAction, setStatusAction } from "./actions";
 import { CopyButton } from "@/components/copy-button";
+import { ClicksChart, RevenueChart } from "@/components/time-series-chart";
 
 type SourceFilter = "all" | "webhook" | "pixel";
 
@@ -41,6 +43,8 @@ export default async function CampaignDetail({
         .where(and(eq(trackingCodes.campaignId, c.id), eq(trackingCodes.influencerId, user.id)))
         .limit(1).then((r) => r[0] ?? null)
     : null;
+
+  const daily = await dailyForCampaign(c.id);
 
   // Aggregate stats over all codes
   const codes = await db.select().from(trackingCodes).where(eq(trackingCodes.campaignId, c.id));
@@ -180,6 +184,22 @@ export default async function CampaignDetail({
         <KPI label="EPC" value={fmtMoney(epcCents(totals.commission, totals.clicks))} />
         <KPI label="Bot rate" value={fmtBotRate(totals.botClicks, totals.clicks)} />
       </div>
+
+      <section className="grid lg:grid-cols-2 gap-4">
+        <div className="card">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="font-semibold">Clicks (last 30 days)</h2>
+            <span className="text-xs text-slate-500">Human + Bot stacked, conversions overlay</span>
+          </div>
+          <ClicksChart data={daily} />
+        </div>
+        <div className="card">
+          <div className="flex items-center justify-between mb-2">
+            <h2 className="font-semibold">Revenue &amp; commission (last 30 days)</h2>
+          </div>
+          <RevenueChart data={daily} />
+        </div>
+      </section>
 
       {/* Source filter */}
       <div className="flex flex-wrap items-center gap-2 text-sm">
